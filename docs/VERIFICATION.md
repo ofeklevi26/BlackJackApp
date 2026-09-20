@@ -1,6 +1,14 @@
 # Verification
 
-Latest verification: September 20, 2026. See [configurable casino shoes](SHOE-VERIFICATION.md), the [practice and casino follow-up](PRACTICE-CASINO-VERIFICATION.md), and the earlier [full QA report](QA-REPORT.md) for coverage and device limits.
+Latest verification: September 21, 2026. See [configurable casino shoes](SHOE-VERIFICATION.md), the [practice and casino follow-up](PRACTICE-CASINO-VERIFICATION.md), and the earlier [full QA report](QA-REPORT.md) for coverage and device limits.
+
+## Optional casino count reveal
+
+- Type checking and all **129 tests** passed. Web, iOS, and Android production exports passed.
+- Browser walkthroughs verified counts are absent from the concealed control's DOM/accessibility text, reveal and hide on tap, update on hits and dealer exposure, and hide on the next round, reload, and fresh session.
+- Independently reconciled two rounds against visible Hi-Lo card values: running count 0 → −2 after bust/hole reveal, then 0 → +1 → +2 in the next round. The negative true count correctly floors to −1. Exact remaining decks reuse the tested shoe API, not the rounded meter estimate.
+- Checked 360×640 and 390×844 phone viewports. Compact side-by-side single-hand layouts keep the count control and gameplay actions visible; the checked settled layouts have no scrolling overflow. Longer split rounds and large accessibility fonts can still scroll the table while action controls stay pinned.
+- Counts remain optional and do not create quizzes or alter learning statistics. Physical iPhone/Android rendering remains unverified.
 
 ## Selectable shoes and fresh sessions
 

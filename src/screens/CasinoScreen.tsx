@@ -10,9 +10,11 @@ import {
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import {
+  decksRemaining,
   handValue,
   shoeDeckCount,
   SHOE_DECK_COUNTS,
+  trueCount,
   type Action,
   type Card,
   type ShoeDeckCount,
@@ -226,9 +228,12 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const [showRules, setShowRules] = useState(false);
   const [selectedDecks, setSelectedDecks] = useState<ShoeDeckCount>(6);
   const [shoeNotice, setShoeNotice] = useState("");
+  const [revealedCountKey, setRevealedCountKey] = useState<string | null>(null);
   const previousShoe = useRef<{ id: string; number: number } | null>(null);
   const { height, width, fontScale } = useWindowDimensions();
   const compact = height < 740 && fontScale <= 1.2;
+  const sideBySide =
+    compact || (width < 600 && height < 940 && fontScale <= 1.2);
   const smallCards = height < 940 || width < 600;
   const player = useAudioPlayer(require("../../assets/card.wav"));
   const table = data.casino;
@@ -288,6 +293,16 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const totalCards = table.shoe.cards.length;
   const remainingCards = Math.max(0, totalCards - table.shoe.nextCard);
   const remainingDecks = Math.round((remainingCards / 52) * 2) / 2;
+  // Reveal belongs to this round only; do not persist it with the saved table.
+  const countKey = `${table.id}:${table.shoe.shuffleNumber}:${round?.id ?? "ready"}`;
+  const countRevealed = revealedCountKey === countKey;
+  const exactDecksRemaining = decksRemaining(table.shoe);
+  const currentTrueCount =
+    exactDecksRemaining > 0
+      ? trueCount(table.shoe.runningCount, exactDecksRemaining)
+      : null;
+  const countLabel = (value: number | null) =>
+    value === null ? "—" : value > 0 ? `+${value}` : `${value}`;
   const dealtPercent = Math.min(100, (table.shoe.nextCard / totalCards) * 100);
   const activeBet = round?.hands[round.activeHand]?.bet ?? 0;
   const resultColor =
@@ -346,9 +361,15 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
         contentContainerStyle={s.tableScroll}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[s.felt, compact && { gap: 6, paddingVertical: 7 }]}>
+        <View
+          style={[
+            s.felt,
+            smallCards && { gap: 8, paddingVertical: 12 },
+            compact && { gap: 6, paddingVertical: 7 },
+          ]}
+        >
           <View style={s.feltLine} pointerEvents="none" />
-          {compact && round?.hands.length === 1 ? (
+          {sideBySide && round?.hands.length === 1 ? (
             <CompactSingleRound table={table} />
           ) : (
             <>
@@ -523,14 +544,42 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
           )}
         </View>
         <View style={s.shoeMeter}>
-          <View style={s.controlHeading}>
-            <Text style={s.caption}>
-              {deckCount}-deck shoe · #{table.shoe.shuffleNumber}
-            </Text>
-            <Text style={s.caption}>
-              About {remainingDecks} {remainingDecks === 1 ? "deck" : "decks"}{" "}
-              left
-            </Text>
+          <View style={s.shoeInfoRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[s.caption, { textAlign: "left" }]}>
+                {deckCount}-deck shoe · #{table.shoe.shuffleNumber}
+              </Text>
+              <Text style={[s.caption, { textAlign: "left" }]}>
+                About {remainingDecks} {remainingDecks === 1 ? "deck" : "decks"}{" "}
+                left
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                countRevealed
+                  ? `Hide counts. Running count ${table.shoe.runningCount}. True count ${currentTrueCount ?? "unavailable"}.`
+                  : "Show running count and true count"
+              }
+              accessibilityState={{ expanded: countRevealed }}
+              onPress={() =>
+                setRevealedCountKey(countRevealed ? null : countKey)
+              }
+              style={({ pressed }) => [
+                s.countPeek,
+                countRevealed && { borderColor: colors.green },
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={s.countValue}>
+                {countRevealed
+                  ? `Running ${countLabel(table.shoe.runningCount)} · True ${countLabel(currentTrueCount)}`
+                  : "Running ••• · True •••"}
+              </Text>
+              <Text style={s.caption}>
+                {countRevealed ? "Tap to hide counts" : "Tap to reveal counts"}
+              </Text>
+            </Pressable>
           </View>
           <View
             accessible
@@ -835,6 +884,13 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
           Table rules
         </Text>
         <Body>
+          Tap the hidden counts beside the shoe meter whenever you want to check
+          yourself. Running count includes all exposed cards since the shuffle,
+          never the dealer’s face-down card. True count divides by the exact
+          undealt decks and rounds down, including negative values. Counts
+          update while revealed and hide again for each new round.
+        </Body>
+        <Body>
           {deckCount} {deckCount === 1 ? "deck" : "decks"} · blackjack pays 3:2
           · dealer {table.shoe.rules.hitSoft17 ? "hits" : "stands on"} soft 17 ·
           dealer checks for blackjack.
@@ -870,6 +926,27 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
 
 const s = StyleSheet.create({
   shoeMeter: { width: "100%", maxWidth: 920, gap: 3 },
+  shoeInfoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  countPeek: {
+    minHeight: 44,
+    flexShrink: 1,
+    maxWidth: "60%",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  countValue: {
+    color: colors.green,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    fontVariant: ["tabular-nums"],
+  },
   shoeTrack: {
     height: 3,
     borderRadius: 3,
@@ -1000,9 +1077,9 @@ const s = StyleSheet.create({
   small: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   tableScroll: {
     paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingBottom: 4,
     alignItems: "center",
-    gap: 7,
+    gap: 5,
   },
   felt: {
     width: "100%",
