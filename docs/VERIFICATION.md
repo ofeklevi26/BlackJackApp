@@ -1,8 +1,20 @@
 # Verification
 
-Verified locally on September 20, 2026.
+Latest verification: September 20, 2026. See the [full QA report](QA-REPORT.md) for the completed functional audit, fixes, and precise coverage limits.
 
-## Automated
+## After QA fixes
+
+- Strict TypeScript checking and all **88 automated tests** passed.
+- Production exports for web, iOS, and Android passed; the native exports generated Hermes bytecode.
+- Actual browser walkthroughs completed all ten lessons, all six counting modes, diagnostic/review practice, full-table sessions, settings, and recovery on a separate origin.
+- Independent checks cover 1,360 strategy cells, 5,500 hand valuations, 3,200 seeded table rounds, and 36 complete counting configurations.
+- Physical-device testing and signed builds remain unperformed. See the QA report for other untested interactions and recommended release checks.
+
+## Original build baseline
+
+The following records the initial build verification, before the later QA fixes and expanded 88-test suite.
+
+### Automated
 
 - TypeScript strict type checking: passed.
 - 63 automated tests: passed. Includes independent strategy cases; S17/H17 and surrender variations; peek, insurance, naturals, splits, doubles and payouts; a 320-round seeded simulation; finite-shoe accounting and visibility; impossible custom histories; stale/duplicate submissions; counting/pause timing; persistence recovery and corrupt-save validation; chart/lesson consistency; and comparable, first-attempt analytics.
@@ -10,7 +22,7 @@ Verified locally on September 20, 2026.
 - Production web export: passed.
 - Android and iOS JavaScript/Hermes bytecode exports: passed.
 
-## Browser walkthroughs
+### Browser walkthroughs
 
 Test sessions were generated on a separate local origin from the delivered preview.
 

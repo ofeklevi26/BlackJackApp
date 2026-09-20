@@ -24,10 +24,12 @@ If your Node installation does not include Corepack, install pnpm using its offi
 - Four tabs: Home, Learn, Practice, and Progress, plus onboarding and table preferences.
 - Ten interactive lessons, guided examples, mastery checks, a glossary, and a tappable strategy chart.
 - Mixed, focused, adaptive, custom, and count-deviation scenarios, with balanced or realistic initial-deal sampling.
+- Custom hands are one-decision exercises; similar-hand practice starts a fresh focused session.
 - Coach feedback after each choice and Challenge feedback in the session review.
 - Six counting drills: card values, running count, pair cancellation, full-deck countdown, deck estimation, and true-count conversion.
 - A finite six-deck table with persistent shoes, insurance, splitting, doubling, surrender, dealer peek, and virtual-unit accounting.
 - Configurable completed-round count checkpoints, with exposed-card corrections in Coach mode.
+- Session restarts preserve recorded rules and training conditions, including checkpoint cadence.
 - Session reviews, bookmarks, first-attempt and assistance-separated accuracy, response time, counting error, category trends, and history export.
 - Local persistence, pause/resume, optional haptics/card sound, reduced motion, and accessible labeled controls.
 
@@ -90,4 +92,4 @@ The preview Android profile produces an APK. iOS internal distribution requires 
 
 ## Verification notes
 
-The repository records automated verification and local browser checks in [docs/VERIFICATION.md](docs/VERIFICATION.md). Native device rendering and signed EAS builds require a physical device/emulator and your Expo/Apple/Google accounts; a web export is not evidence of a signed native build.
+The latest [QA report](docs/QA-REPORT.md) records 88 passing tests, independent strategy/counting checks, actual learner walkthroughs, confirmed fixes, and remaining device checks. [Verification notes](docs/VERIFICATION.md) also retain the original build baseline. Native device rendering and signed EAS builds require a physical device/emulator and your Expo/Apple/Google accounts; bundle exports are not evidence of a signed native build.
