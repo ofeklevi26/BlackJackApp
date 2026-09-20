@@ -121,6 +121,12 @@ export const describeMode = (mode: CountingMode) =>
   COUNTING_MODES.find((item) => item.id === mode)!;
 export const signed = (value: number) => (value > 0 ? `+${value}` : `${value}`);
 
+/** Accept a pasted mathematical minus without silently changing its sign or digits. */
+export function normalizeCountInput(value: string): string {
+  return value.trim().replace(/[−–]/g, "-").replace(/^\+/, "").slice(0, 8);
+}
+export const validCountInput = (value: string) => /^-?\d+$/.test(value);
+
 /** A stable integer mixer keeps resumed and replayed exercises identical. */
 function randomAt(seed: number, index: number): number {
   let value = (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0;
@@ -181,6 +187,10 @@ export function startCountingSession(
 }
 
 export function nextCountingExercise(state: CountingState): CountingState {
+  // Repeated Next taps may be queued before React updates the visible controls.
+  // Once the new exercise exists, only its recorded feedback can advance it.
+  if (state.paused || (state.exercise !== null && state.phase !== "feedback"))
+    return state;
   if (state.answers.length >= state.totalExercises)
     return { ...state, phase: "complete" };
   const ordinal = state.answers.length;

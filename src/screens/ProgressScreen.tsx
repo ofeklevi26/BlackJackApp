@@ -14,10 +14,20 @@ import { createCountingSetup } from "../counting";
 import type { CountingMode } from "../counting";
 import { LESSONS } from "../content/lessons";
 import { CHART_DEALERS } from "../content/chart";
-import { buildHeatmap, progressCohortKey } from "../content/progress";
-import { percent, summarize } from "../state/analytics";
+import {
+  bookmarkKey,
+  buildHeatmap,
+  progressCohortKey,
+  setBookmark,
+} from "../content/progress";
+import {
+  assistanceProfile,
+  percent,
+  summarize,
+  summarizeCounts,
+} from "../state/analytics";
 import { exportHistory, useStore } from "../state/store";
-import { newTraining } from "../state/training";
+import { newTraining, trainingFromSession } from "../state/training";
 import type { Session } from "../state/types";
 import {
   Body,
@@ -40,6 +50,7 @@ type StartRequest = {
   countMode?: CountingMode;
   speedMs?: number;
   automatic?: boolean;
+  sourceSession?: Session;
 };
 const titleCase = (text: string) =>
   text.replace(/(^|[- ])\w/g, (value) => value.replace("-", " ").toUpperCase());
@@ -49,14 +60,23 @@ function sampleSize(session: Session) {
   );
 }
 function sessionAccuracy(session: Session) {
-  return (
-    session.countResult?.exactAccuracy ?? summarize(session.decisions).accuracy
-  );
+  return session.countResult
+    ? summarizeCounts(session.countResult.answers).accuracy
+    : summarize(session.decisions).accuracy;
 }
 function conditions(session: Session) {
+  const count = session.countResult;
+  const pace =
+    count?.mode === "decks" || count?.mode === "true-count"
+      ? "self-paced prompts"
+      : count?.automatic
+        ? `${(count.speedMs / 1000).toFixed(1)}s/card`
+        : count?.automatic === false
+          ? "tap to deal"
+          : "pace not recorded";
   return session.kind === "counting"
-    ? `${titleCase(session.countResult?.mode ?? session.topic)} · ${session.countResult?.automatic ? `${((session.countResult?.speedMs ?? 0) / 1000).toFixed(1)}s/card` : session.countResult?.automatic === false ? "tap to deal" : "pace not recorded"} · ${session.assisted ? "assisted" : "unassisted"}`
-    : `${session.kind === "simulator" ? "Shoe" : titleCase(session.topic)} · ${session.rules.hitSoft17 ? "H17" : "S17"} · surrender ${session.rules.surrender ? "on" : "off"} · ${session.feedback} · ${session.assisted ? "assisted" : "unassisted"}`;
+    ? `${titleCase(count?.mode ?? session.topic)} · ${pace} · ${assistanceProfile(session)}`
+    : `${session.kind === "simulator" ? "Shoe" : titleCase(session.topic)} · ${session.rules.hitSoft17 ? "H17" : "S17"} · surrender ${session.rules.surrender ? "on" : "off"} · ${session.feedback} · ${assistanceProfile(session)}${session.kind === "strategy" ? ` · ${session.sampling ? `${session.sampling} sampling` : "sampling not recorded"}` : ""}`;
 }
 
 export default function ProgressScreen() {
@@ -125,7 +145,10 @@ export default function ProgressScreen() {
           ...previous,
           active: null,
           counting: {
-            ...createCountingSetup(previous.settings.assistance),
+            ...createCountingSetup(
+              request.sourceSession?.countResult?.assisted ??
+                previous.settings.assistance,
+            ),
             mode: request.countMode,
             ...(request.speedMs ? { speedMs: request.speedMs } : {}),
             automatic: request.automatic ?? false,
@@ -141,12 +164,19 @@ export default function ProgressScreen() {
       return {
         ...previous,
         counting: null,
-        active: newTraining(withRules, {
-          topic: request.topic,
-          scenario: request.scenario,
-          reviewOnly: request.reviewOnly,
-          kind: request.topic === "simulator" ? "simulator" : "strategy",
-        }),
+        active: request.sourceSession
+          ? trainingFromSession(previous, request.sourceSession, {
+              topic: request.topic,
+              scenario: request.scenario,
+              reviewOnly: request.reviewOnly,
+              kind: request.topic === "simulator" ? "simulator" : "strategy",
+            })
+          : newTraining(withRules, {
+              topic: request.topic,
+              scenario: request.scenario,
+              reviewOnly: request.reviewOnly,
+              kind: request.topic === "simulator" ? "simulator" : "strategy",
+            }),
       };
     });
     setPendingStart(null);
@@ -165,6 +195,7 @@ export default function ProgressScreen() {
             countMode: session.countResult.mode,
             speedMs: session.countResult.speedMs,
             automatic: session.countResult.automatic,
+            sourceSession: session,
           }
         : {
             topic:
@@ -172,6 +203,7 @@ export default function ProgressScreen() {
                 ? "simulator"
                 : topic,
             rules: session.rules,
+            sourceSession: session,
           },
     );
   }
@@ -179,7 +211,7 @@ export default function ProgressScreen() {
     <Modal
       visible={pendingStart !== null}
       transparent
-      animationType="fade"
+      animationType={data.settings.reducedMotion ? "none" : "fade"}
       onRequestClose={() => setPendingStart(null)}
     >
       <View style={s.modalBackdrop}>
@@ -229,6 +261,7 @@ export default function ProgressScreen() {
               scenario: decision.scenario,
               rules: review.rules,
               reviewOnly: true,
+              sourceSession: review,
             })
           }
           onPractice={(topic) => practiceFromSession(review, topic)}
@@ -352,11 +385,9 @@ export default function ProgressScreen() {
                   <Body style={s.note}>
                     {comparable.length} comparable{" "}
                     {comparable.length === 1 ? "session" : "sessions"}.
-                    Different topics, rules, feedback modes, and assistance
-                    settings are kept separate.
                     {view === "counting"
-                      ? " Counting pace is matched too."
-                      : ""}
+                      ? "Counting mode, assistance, and relevant dealing pace are matched. Blackjack table settings do not affect these drills."
+                      : "Different topics, rules, feedback modes, assistance, and sampling methods are kept separate."}
                   </Body>
                   {showConditions && (
                     <View style={s.groupList}>
@@ -452,7 +483,11 @@ export default function ProgressScreen() {
                     show accuracy, with the number of answers beneath each bar.
                   </Body>
                   {trend.length ? (
-                    <View style={s.trend}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator
+                      contentContainerStyle={s.trend}
+                    >
                       {trend.map((session) => (
                         <Pressable
                           key={session.id}
@@ -485,7 +520,7 @@ export default function ProgressScreen() {
                           </Text>
                         </Pressable>
                       ))}
-                    </View>
+                    </ScrollView>
                   ) : (
                     <Body>No scored answers in this group yet.</Body>
                   )}
@@ -554,6 +589,7 @@ export default function ProgressScreen() {
                                   ? "deviations"
                                   : weak,
                               rules: latest.rules,
+                              sourceSession: latest,
                             })
                           }
                         />
@@ -670,6 +706,7 @@ export default function ProgressScreen() {
                                       : cell.example.category,
                                   scenario: cell.example.scenario,
                                   rules: latest.rules,
+                                  sourceSession: latest,
                                   reviewOnly: true,
                                 })
                               }
@@ -711,7 +748,7 @@ export default function ProgressScreen() {
                       )}{" "}
                       · {sampleSize(session)}{" "}
                       {session.kind === "counting" ? "answers" : "decisions"} ·{" "}
-                      {session.assisted ? "assisted" : "unassisted"}
+                      {assistanceProfile(session)}
                     </Text>
                   </View>
                   <Text style={s.historyAccuracy}>
@@ -744,12 +781,17 @@ export default function ProgressScreen() {
               waiting here for focused practice.
             </Body>
           ) : (
-            data.bookmarks.map((bookmark, index) => (
-              <View key={`${bookmark.scenario.id}-${index}`} style={s.bookmark}>
+            data.bookmarks.map((bookmark) => (
+              <View key={bookmarkKey(bookmark)} style={s.bookmark}>
                 <View style={s.row}>
                   {bookmark.scenario.cards.slice(0, 3).map((card) => (
                     <PlayingCard key={card.id} card={card} small />
                   ))}
+                  {bookmark.scenario.cards.length > 3 && (
+                    <Text style={s.note}>
+                      +{bookmark.scenario.cards.length - 3} more cards
+                    </Text>
+                  )}
                   <View style={s.bookmarkCopy}>
                     <Text style={s.skillLabel}>
                       {handValue(bookmark.scenario.cards).soft
@@ -784,8 +826,10 @@ export default function ProgressScreen() {
                     onPress={() =>
                       update((previous) => ({
                         ...previous,
-                        bookmarks: previous.bookmarks.filter(
-                          (_, itemIndex) => itemIndex !== index,
+                        bookmarks: setBookmark(
+                          previous.bookmarks,
+                          bookmark,
+                          false,
                         ),
                       }))
                     }
@@ -891,7 +935,13 @@ const s = StyleSheet.create({
     gap: 8,
     paddingTop: 7,
   },
-  trendColumn: { flex: 1, gap: 7, alignItems: "center", minWidth: 23 },
+  trendColumn: {
+    width: 54,
+    minWidth: 44,
+    minHeight: 44,
+    gap: 7,
+    alignItems: "center",
+  },
   barTrack: {
     height: 112,
     backgroundColor: colors.surface2,

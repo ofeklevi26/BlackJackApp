@@ -36,6 +36,7 @@ export type Session = {
   rounds: number;
   profit: number;
   countResult?: CountResult;
+  checkpointEvery?: number;
   insurance?: {
     round: number;
     taken: boolean;

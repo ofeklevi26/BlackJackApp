@@ -1,4 +1,5 @@
 import type { Decision, Session } from "./types";
+import type { CountAnswer } from "../counting";
 export const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length
@@ -38,10 +39,65 @@ export function summarize(decisions: Decision[]) {
 export function weakTopics(sessions: Session[]) {
   const data = summarize(sessions.flatMap((s) => s.decisions));
   return ["hard", "soft", "pairs"]
-    .filter((k) => data.groups[k].count > 0)
+    .filter((k) => data.groups[k].count > 0 && data.groups[k].accuracy < 1)
     .sort((a, b) => data.groups[a].accuracy - data.groups[b].accuracy);
 }
+
+export function summarizeCounts(answers: CountAnswer[]) {
+  const stats = (items: CountAnswer[]) => ({
+    count: items.length,
+    accuracy: items.length
+      ? items.filter((answer) => answer.submitted === answer.expected).length /
+        items.length
+      : 0,
+  });
+  return {
+    ...stats(answers),
+    meanAbsoluteError: answers.length
+      ? answers.reduce(
+          (sum, answer) => sum + Math.abs(answer.submitted - answer.expected),
+          0,
+        ) / answers.length
+      : 0,
+    medianMs: median(answers.map((answer) => answer.responseMs)),
+    assisted: stats(answers.filter((answer) => answer.assisted)),
+    unassisted: stats(answers.filter((answer) => !answer.assisted)),
+  };
+}
+
+export function assistanceProfile(
+  session: Session,
+): "assisted" | "unassisted" | "mixed assistance" {
+  const observations =
+    session.kind === "counting"
+      ? (session.countResult?.answers ?? [])
+      : session.decisions.filter((decision) => !decision.replay);
+  if (!observations.length) return session.assisted ? "assisted" : "unassisted";
+  const assisted = observations.filter(
+    (observation) => observation.assisted,
+  ).length;
+  return assisted === 0
+    ? "unassisted"
+    : assisted === observations.length
+      ? "assisted"
+      : "mixed assistance";
+}
+
+export function countingPaceKey(session: Session) {
+  const count = session.countResult;
+  if (count?.mode === "decks" || count?.mode === "true-count")
+    return "untimed-prompt";
+  if (count?.automatic === false) return "manual";
+  return `${count?.automatic ? "automatic" : "unrecorded"}/${count?.speedMs ?? "unknown"}`;
+}
+
 export function comparisonKey(session: Session) {
-  return `${session.kind}/${session.topic}/${session.rules.hitSoft17}/${session.rules.surrender}/${session.feedback}/${session.assisted}/${session.sampling || "balanced"}`;
+  if (session.kind === "counting")
+    return `counting/${session.countResult?.mode ?? session.topic}/${assistanceProfile(session)}/${countingPaceKey(session)}`;
+  const sampling =
+    session.kind === "simulator"
+      ? "finite-shoe"
+      : (session.sampling ?? "unrecorded");
+  return `${session.kind}/${session.topic}/${session.rules.hitSoft17}/${session.rules.surrender}/${session.feedback}/${assistanceProfile(session)}/${sampling}`;
 }
 export const percent = (n: number) => `${Math.round(n * 100)}%`;

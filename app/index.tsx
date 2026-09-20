@@ -31,7 +31,7 @@ export default function Home() {
   const { data, update, storageError } = useStore();
   const wide = useWindowDimensions().width > 700;
   const stats = summarize(data.sessions.flatMap((s) => s.decisions));
-  const weak = weakTopics(data.sessions)[0] || "hard";
+  const weak = weakTopics(data.sessions)[0];
   const completed = Object.keys(data.completedLessons).length;
   const go = (topic: string) =>
     router.push({ pathname: "/practice", params: { topic } });
@@ -42,7 +42,13 @@ export default function Home() {
           <Eyebrow>YOUR NEXT GOOD DECISION STARTS HERE</Eyebrow>
           <Title>A little practice.{"\n"}A sharper instinct.</Title>
         </View>
-        <Chip label="●  All progress saved on device" />
+        <Chip
+          label={
+            storageError
+              ? "Progress needs attention"
+              : "●  Progress stored on this device"
+          }
+        />
       </View>
       {storageError && (
         <Panel>
@@ -286,27 +292,23 @@ export default function Home() {
         <View style={shared.between}>
           <View style={{ flex: 1, minWidth: 200, gap: 7 }}>
             <Eyebrow>
-              {stats.count ? "RECOMMENDED FOR YOU" : "A GOOD PLACE TO BEGIN"}
+              {weak ? "RECOMMENDED FOR YOU" : "KEEP BUILDING YOUR SKILLS"}
             </Eyebrow>
             <Heading>
-              {stats.count
+              {weak
                 ? `Give ${weak} hands another look.`
                 : "The best move has a reason."}
             </Heading>
             <Body>
-              {stats.count
+              {weak
                 ? "Your recent answers suggest a focused refresher. A few fresh situations will help it stick."
                 : "Start with a short lesson, then put it into practice at your own pace."}
             </Body>
           </View>
           <Button
-            label={
-              stats.count ? "Practice my weak spots" : "Explore the lessons"
-            }
+            label={weak ? "Practice my weak spots" : "Explore the lessons"}
             variant="secondary"
-            onPress={() =>
-              stats.count ? go("adaptive") : router.push("/learn")
-            }
+            onPress={() => (weak ? go("adaptive") : router.push("/learn"))}
           />
         </View>
       </Panel>

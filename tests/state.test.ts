@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import { makeScenario } from "../src/engine";
 import {
   comparisonKey,
+  assistanceProfile,
   median,
   summarize,
+  summarizeCounts,
   weakTopics,
 } from "../src/state/analytics";
 import type { Decision, Session } from "../src/state/types";
+import type { CountAnswer } from "../src/counting";
 
 let sequence = 0;
 function decision(overrides: Partial<Decision> = {}): Decision {
@@ -144,6 +147,11 @@ test("weak topic recommendations prioritize observed errors and ignore replay-on
   ]);
   assert.deepEqual(actual, ["hard", "soft"]);
   assert.deepEqual(weakTopics([]), []);
+  assert.deepEqual(
+    weakTopics([session([decision({ correct: true })])]),
+    [],
+    "Perfect observed topics must not be called weak",
+  );
 });
 
 test("comparison groups separate rules, feedback, assistance, training mode, and topic", () => {
@@ -172,4 +180,77 @@ test("comparable sessions remain grouped despite their dates, length, outcomes, 
     profit: -10,
   });
   assert.equal(comparisonKey(short), comparisonKey(long));
+});
+
+test("cohorts distinguish actual mixed assistance and ignore assistance used only in replays", () => {
+  const mixed = session(
+    [decision({ assisted: true }), decision({ assisted: false })],
+    { assisted: true },
+  );
+  const assisted = session([decision({ assisted: true })], { assisted: true });
+  const independent = session([
+    decision({ assisted: false }),
+    decision({ assisted: true, replay: true }),
+  ]);
+  assert.equal(assistanceProfile(mixed), "mixed assistance");
+  assert.notEqual(comparisonKey(mixed), comparisonKey(assisted));
+  assert.equal(assistanceProfile(independent), "unassisted");
+  assert.equal(
+    comparisonKey(independent),
+    comparisonKey(session([decision()])),
+  );
+});
+
+test("unrecorded strategy sampling is not silently assumed balanced", () => {
+  const unknown = session();
+  assert.notEqual(
+    comparisonKey(unknown),
+    comparisonKey({ ...unknown, sampling: "balanced" }),
+  );
+  assert.notEqual(
+    comparisonKey({ ...unknown, sampling: "balanced" }),
+    comparisonKey({ ...unknown, sampling: "realistic" }),
+  );
+});
+
+test("count statistics reconcile individual answers, error distance, assistance and median", () => {
+  const answer = (
+    expected: number,
+    submitted: number,
+    responseMs: number,
+    assisted: boolean,
+  ): CountAnswer => ({
+    id: `${responseMs}`,
+    kind: "running-count",
+    expected,
+    submitted,
+    error: submitted - expected,
+    absoluteError: Math.abs(submitted - expected),
+    responseMs,
+    cards: [],
+    assisted,
+  });
+  const stats = summarizeCounts([
+    answer(2, 2, 1000, true),
+    answer(-1, 1, 9000, true),
+    answer(4, 3, 2000, false),
+  ]);
+  assert.equal(stats.count, 3);
+  assert.equal(stats.accuracy, 1 / 3);
+  assert.equal(stats.meanAbsoluteError, 1);
+  assert.equal(stats.medianMs, 2000);
+  assert.deepEqual(stats.assisted, { count: 2, accuracy: 0.5 });
+  assert.deepEqual(stats.unassisted, { count: 1, accuracy: 0 });
+  assert.equal(summarizeCounts([]).count, 0);
+  assert.equal(summarizeCounts([]).meanAbsoluteError, 0);
+});
+
+test("combined practice accuracy weights actual decisions rather than averaging session percentages", () => {
+  const sessions = [
+    session([decision({ correct: true })]),
+    session([decision(), decision(), decision()]),
+  ];
+  const stats = summarize(sessions.flatMap((item) => item.decisions));
+  assert.equal(stats.count, 4);
+  assert.equal(stats.accuracy, 0.25);
 });

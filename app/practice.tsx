@@ -11,7 +11,12 @@ import {
 import { useLocalSearchParams, usePathname, router } from "expo-router";
 import { useAudioPlayer } from "expo-audio";
 import { useStore } from "../src/state/store";
-import { newTraining } from "../src/state/training";
+import {
+  newTraining,
+  trainingFromSession,
+  completedSession,
+  advanceTrainingTime,
+} from "../src/state/training";
 import { weakTopics } from "../src/state/analytics";
 import type { Training, Decision, Session } from "../src/state/types";
 import {
@@ -56,6 +61,7 @@ import {
 import { tapFeedback } from "../src/ui/feedback";
 import CountingTrainer from "../src/screens/CountingTrainer";
 import { createCountingSetup } from "../src/counting";
+import { setBookmark } from "../src/content/progress";
 import SessionReview from "../src/screens/SessionReview";
 
 const ACTIONS: Action[] = ["hit", "stand", "double", "split", "surrender"];
@@ -137,11 +143,7 @@ export default function Practice() {
         d.active?.session.id === id
           ? {
               ...d,
-              active: {
-                ...d.active,
-                elapsedMs: d.active.elapsedMs + delta,
-                thinkingMs: (d.active.thinkingMs || 0) + delta,
-              },
+              active: advanceTrainingTime(d.active, delta),
             }
           : d,
       );
@@ -154,8 +156,14 @@ export default function Practice() {
         d.active ? { ...d, active: { ...d.active, paused: true } } : d,
       );
   }, [path]);
-  const change = (fn: (a: Training) => Training) =>
-    update((d) => (d.active ? { ...d, active: fn(d.active) } : d));
+  const change = (fn: (a: Training) => Training) => {
+    const now = Date.now();
+    const delta = Math.max(0, now - lastTick.current);
+    lastTick.current = now;
+    update((d) =>
+      d.active ? { ...d, active: fn(advanceTrainingTime(d.active, delta)) } : d,
+    );
+  };
   function finish() {
     if (!active) return;
     if (active.shoe?.round && active.shoe.round.phase !== "complete") {
@@ -165,13 +173,9 @@ export default function Practice() {
       );
       return;
     }
-    const result = {
-      ...active.session,
-      endedAt: Date.now(),
-      durationMs: active.elapsedMs,
-      rounds: active.shoe?.rounds ?? active.session.decisions.length,
-      profit: active.shoe ? active.shoe.bankroll - 100 : 0,
-    };
+    const result = completedSession(
+      advanceTrainingTime(active, Math.max(0, Date.now() - lastTick.current)),
+    );
     setSummary(result);
     update((d) => ({
       ...d,
@@ -207,6 +211,7 @@ export default function Practice() {
           minutes,
           sampling,
           scenario: custom,
+          checkpointEvery,
         }),
         checkpointEvery,
       },
@@ -216,16 +221,15 @@ export default function Practice() {
     if (!active) return;
     update((d) => ({
       ...d,
-      bookmarks: d.bookmarks.some((b) => b.scenario.id === scenario.id)
-        ? d.bookmarks
-        : [
-            ...d.bookmarks,
-            {
-              scenario,
-              rules: active.session.rules,
-              countMode: active.countMode,
-            },
-          ],
+      bookmarks: setBookmark(
+        d.bookmarks,
+        {
+          scenario,
+          rules: active.session.rules,
+          countMode: active.countMode,
+        },
+        true,
+      ),
     }));
     setNotice("Saved to your review collection.");
   }
@@ -277,26 +281,32 @@ export default function Practice() {
     });
   }
   function next() {
-    if (!active) return;
+    if (!active?.feedback) return;
+    const feedbackId = active.feedback.id;
+    setNotice("");
     if (due && !active.shoe) {
       finish();
       return;
     }
-    change((a) => ({
-      ...a,
-      feedback: undefined,
-      thinkingMs: 0,
-      seed: a.seed + 7919,
-      scenario: a.shoe
-        ? undefined
-        : generateScenario(
-            a.seed + 7919,
-            a.session.topic,
-            a.sampling,
-            weakTopics(data.sessions).slice(0, 1),
-            a.session.rules,
-          ),
-    }));
+    change((a) =>
+      a.feedback?.id !== feedbackId
+        ? a
+        : {
+            ...a,
+            feedback: undefined,
+            thinkingMs: 0,
+            seed: a.seed + 7919,
+            scenario: a.shoe
+              ? undefined
+              : generateScenario(
+                  a.seed + 7919,
+                  a.session.topic,
+                  a.sampling,
+                  weakTopics(data.sessions).slice(0, 1),
+                  a.session.rules,
+                ),
+          },
+    );
   }
   function checkpoint() {
     if (!active?.shoe) return;
@@ -374,59 +384,52 @@ export default function Practice() {
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
   if (summary && !active && !data.counting)
     return (
-      <Page>
-        <SessionReview
-          session={summary}
-          onClose={() => {
-            setSummary(null);
-            router.push("/progress");
-          }}
-          onReplay={(decision) => {
-            setSummary(null);
+      <SessionReview
+        session={summary}
+        onClose={() => {
+          setSummary(null);
+          router.push("/progress");
+        }}
+        onReplay={(decision) => {
+          setSummary(null);
+          setNotice("");
+          update((d) => ({
+            ...d,
+            active: trainingFromSession(d, summary, {
+              scenario: decision.scenario,
+              topic: summary.topic,
+              reviewOnly: true,
+            }),
+          }));
+        }}
+        onPractice={(newTopic) => {
+          setSummary(null);
+          setNotice("");
+          setTopic(newTopic);
+          if (summary.kind === "counting" && summary.countResult) {
             update((d) => ({
               ...d,
-              active: newTraining(
-                { ...d, settings: { ...d.settings, rules: summary.rules } },
-                {
-                  scenario: decision.scenario,
-                  topic: summary.topic,
-                  target: 1,
-                  reviewOnly: true,
-                },
-              ),
+              counting: {
+                ...createCountingSetup(summary.countResult!.assisted),
+                mode: summary.countResult!.mode,
+                automatic: summary.countResult!.automatic ?? false,
+                speedMs: summary.countResult!.speedMs,
+              },
+              active: null,
             }));
-          }}
-          onPractice={(newTopic) => {
-            setSummary(null);
-            setTopic(newTopic);
-            if (summary.kind === "counting" && summary.countResult) {
-              update((d) => ({
-                ...d,
-                counting: {
-                  ...createCountingSetup(d.settings.assistance),
-                  mode: summary.countResult!.mode,
-                  automatic: summary.countResult!.automatic ?? false,
-                  speedMs: summary.countResult!.speedMs,
-                },
-                active: null,
-              }));
-              return;
-            }
-            update((d) => ({
-              ...d,
-              active: newTraining(d, { topic: newTopic }),
-            }));
-          }}
-        />
-      </Page>
+            return;
+          }
+          update((d) => ({
+            ...d,
+            active: trainingFromSession(d, summary, { topic: newTopic }),
+          }));
+        }}
+      />
     );
   if (data.counting)
     return (
       <CountingTrainer
-        initialState={{
-          ...data.counting,
-          paused: data.counting.phase !== "setup",
-        }}
+        initialState={data.counting}
         settings={data.settings}
         onSave={(state) => update((d) => ({ ...d, counting: state }))}
         onExit={() => {
@@ -466,7 +469,7 @@ export default function Practice() {
     );
   if (!active)
     return (
-      <Page>
+      <Page key="practice-setup">
         <View style={{ gap: 8 }}>
           <Eyebrow>YOUR PRACTICE ROOM</Eyebrow>
           <Title>Make your next move.</Title>
@@ -594,29 +597,38 @@ export default function Practice() {
               label={data.settings.assistance ? "Hints on" : "Unassisted"}
             />
           </View>
-          <Body>Session length</Body>
-          <View style={shared.row}>
-            {[10, 20, 50].map((n) => (
-              <Chip
-                key={n}
-                label={`${n} ${topic === "simulator" ? "rounds" : "decisions"}`}
-                selected={!minutes && target === n}
-                onPress={() => {
-                  setTarget(n);
-                  setMinutes(0);
-                }}
-              />
-            ))}
-            {[3, 5, 10].map((n) => (
-              <Chip
-                key={`m${n}`}
-                label={`${n} minutes`}
-                selected={minutes === n}
-                onPress={() => setMinutes(n)}
-              />
-            ))}
-          </View>
-          {topic !== "simulator" && (
+          {topic === "custom" ? (
+            <Body>
+              Your custom hand is a one-decision session. Afterward, practice
+              similar hands to start a fresh drill.
+            </Body>
+          ) : (
+            <>
+              <Body>Session length</Body>
+              <View style={shared.row}>
+                {[10, 20, 50].map((n) => (
+                  <Chip
+                    key={n}
+                    label={`${n} ${topic === "simulator" ? "rounds" : "decisions"}`}
+                    selected={!minutes && target === n}
+                    onPress={() => {
+                      setTarget(n);
+                      setMinutes(0);
+                    }}
+                  />
+                ))}
+                {[3, 5, 10].map((n) => (
+                  <Chip
+                    key={`m${n}`}
+                    label={`${n} minutes`}
+                    selected={minutes === n}
+                    onPress={() => setMinutes(n)}
+                  />
+                ))}
+              </View>
+            </>
+          )}
+          {topic !== "simulator" && topic !== "custom" && (
             <>
               <Body>Situation selection</Body>
               <View style={shared.row}>
@@ -765,7 +777,7 @@ export default function Practice() {
     shoe.rounds % (active.checkpointEvery || 1) === 0 &&
     active.checkpointRound !== shoe.rounds;
   return (
-    <Page>
+    <Page key={active.session.id}>
       <View style={shared.between}>
         <View style={{ gap: 7 }}>
           <Eyebrow>
@@ -1046,6 +1058,35 @@ export default function Practice() {
               </View>
             </Animated.View>
           )}
+          {shoe &&
+            !feedback &&
+            round?.phase === "playing" &&
+            round.hands.length > 1 && (
+              <Panel>
+                <Heading>Your other split hands</Heading>
+                <Body>
+                  Keep every exposed card in your count, including cards drawn
+                  to a finished hand.
+                </Body>
+                {round.hands.map((hand, index) =>
+                  index === round.activeHand ? null : (
+                    <View key={hand.id} style={{ gap: 8 }}>
+                      <Eyebrow>
+                        Hand {index + 1} ·{" "}
+                        {index < round.activeHand
+                          ? "finished playing"
+                          : "waiting to play"}
+                      </Eyebrow>
+                      <View style={shared.row}>
+                        {hand.cards.map((card) => (
+                          <PlayingCard key={card.id} card={card} small />
+                        ))}
+                      </View>
+                    </View>
+                  ),
+                )}
+              </Panel>
+            )}
           {feedback && (
             <Panel
               style={{
@@ -1139,19 +1180,28 @@ export default function Practice() {
                   <Button
                     label="Practice similar hands"
                     variant="ghost"
-                    onPress={() =>
-                      change((a) => ({
-                        ...a,
-                        session: { ...a.session, topic: feedback.category },
-                        feedback: undefined,
-                        seed: a.seed + 1337,
-                        thinkingMs: 0,
-                        scenario: generateScenario(
-                          a.seed + 1337,
-                          feedback.category,
-                        ),
-                      }))
-                    }
+                    onPress={() => {
+                      const result = completedSession(active);
+                      setNotice("");
+                      update((d) =>
+                        d.active?.session.id !== active.session.id
+                          ? d
+                          : {
+                              ...d,
+                              sessions: active.reviewOnly
+                                ? d.sessions
+                                : [
+                                    ...d.sessions.filter(
+                                      (s) => s.id !== result.id,
+                                    ),
+                                    result,
+                                  ],
+                              active: trainingFromSession(d, active.session, {
+                                topic: feedback.category,
+                              }),
+                            },
+                      );
+                    }}
                   />
                 )}
               </View>
@@ -1181,7 +1231,8 @@ export default function Practice() {
                   Visible-card running count {signed(shoe.runningCount)}
                 </Body>
               )}
-              {active.checkpointRound === shoe.rounds &&
+              {round?.phase === "complete" &&
+                active.checkpointRound === shoe.rounds &&
                 active.session.feedback === "coach" && (
                   <>
                     <Button

@@ -55,6 +55,12 @@ export const SOURCE_METADATA = {
     checked: "2026-09-20",
     scope: "Six-deck late surrender, including H17 8+8 versus ace.",
   },
+  countConversion: {
+    url: "https://www.qfit.com/CalculatingTrueCounts.htm",
+    checked: "2026-09-20",
+    scope:
+      "Hi-Lo divides by decks. This app consistently floors both positive and negative quotients; for example, -1.5 becomes -2. Other published systems may use rounding or truncation, so their worked examples can differ.",
+  },
   deviations: {
     url: COUNT_SOURCE,
     checked: "2026-09-20",

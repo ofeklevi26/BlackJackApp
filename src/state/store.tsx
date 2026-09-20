@@ -9,9 +9,16 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, Platform, Share, Text, View } from "react-native";
 import type { AppData } from "./types";
-import { decodeSavedData } from "./persistence";
+import {
+  createSaveQueue,
+  decodeSavedData,
+  pauseSavedActivities,
+  serializeHistoryExport,
+} from "./persistence";
 import { colors } from "../ui/theme";
 const KEY = "acewise:v1";
+// Keep unreadable data available to an explicit history export until the user resets.
+let recoveryCopy: { rawSavedData: string; reason: string } | null = null;
 export const initialData = (): AppData => ({
   version: 1,
   onboarding: false,
@@ -43,19 +50,43 @@ export function StoreProvider({ children }: PropsWithChildren) {
   const [data, setData] = useState(initialData);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
-  const queue = useRef(Promise.resolve());
+  const queue = useRef<ReturnType<typeof createSaveQueue> | null>(null);
+  if (!queue.current)
+    queue.current = createSaveQueue(
+      (serialized) => AsyncStorage.setItem(KEY, serialized),
+      () =>
+        setStorageError(
+          "Progress could not be saved on this device. Please export your history before resetting storage.",
+        ),
+    );
   useEffect(() => {
     let live = true;
     AsyncStorage.getItem(KEY)
       .then((raw) => {
         if (!live || !raw) return;
-        setData(decodeSavedData(raw, initialData()));
+        try {
+          const restored = decodeSavedData(raw, initialData());
+          recoveryCopy = null;
+          setData(restored);
+        } catch (error) {
+          recoveryCopy = {
+            rawSavedData: raw,
+            reason:
+              error instanceof Error
+                ? error.message
+                : "The saved data could not be decoded.",
+          };
+          throw error;
+        }
       })
-      .catch(() =>
-        setStorageError(
-          "Your saved training could not be loaded. Its stored copy has been preserved; new changes cannot be saved until storage is reset.",
-        ),
-      )
+      .catch(() => {
+        if (live)
+          setStorageError(
+            recoveryCopy
+              ? "Your saved training could not be loaded. Its stored copy is preserved. Export history to keep a recovery copy before resetting; new changes cannot be saved until then."
+              : "Your saved training could not be read. Existing storage has not been overwritten. Try reopening the app; new changes cannot be saved until storage is available or reset.",
+          );
+      })
       .finally(() => {
         if (live) setReady(true);
       });
@@ -66,20 +97,11 @@ export function StoreProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!ready || storageError) return;
     const serialized = JSON.stringify(data);
-    queue.current = queue.current
-      .then(() => AsyncStorage.setItem(KEY, serialized))
-      .catch(() =>
-        setStorageError(
-          "Progress could not be saved on this device. Please export your history.",
-        ),
-      );
+    void queue.current!.enqueue(serialized);
   }, [data, ready, storageError]);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active")
-        setData((p) =>
-          p.active ? { ...p, active: { ...p.active, paused: true } } : p,
-        );
+      if (state !== "active") setData(pauseSavedActivities);
     });
     return () => sub.remove();
   }, []);
@@ -91,6 +113,8 @@ export function StoreProvider({ children }: PropsWithChildren) {
         ready,
         storageError,
         reset: () => {
+          queue.current!.reset();
+          recoveryCopy = null;
           setStorageError(null);
           setData({ ...initialData(), onboarding: true });
         },
@@ -119,11 +143,7 @@ export function useStore() {
   return store;
 }
 export async function exportHistory(data: AppData) {
-  const content = JSON.stringify(
-    { exportedAt: new Date().toISOString(), ...data },
-    null,
-    2,
-  );
+  const content = serializeHistoryExport(data, recoveryCopy);
   if (Platform.OS === "web") {
     const blob = new Blob([content], { type: "application/json" });
     const url = URL.createObjectURL(blob);

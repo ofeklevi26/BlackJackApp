@@ -2,6 +2,66 @@ import { hiLo, RANKS, SUITS, type Card } from "../engine";
 import type { AppData } from "./types";
 
 type ObjectValue = Record<string, unknown>;
+
+/** Serial writes stop after failure; an explicit reset invalidates stale queued writes. */
+export function createSaveQueue(
+  write: (serialized: string) => Promise<void>,
+  onFailure: (error: unknown) => void,
+) {
+  let tail = Promise.resolve();
+  let blocked = false;
+  let generation = 0;
+  return {
+    enqueue(serialized: string): Promise<void> {
+      const revision = generation;
+      tail = tail.then(async () => {
+        if (blocked || revision !== generation) return;
+        try {
+          await write(serialized);
+        } catch (error) {
+          if (revision === generation) {
+            blocked = true;
+            onFailure(error);
+          }
+        }
+      });
+      return tail;
+    },
+    reset() {
+      generation++;
+      blocked = false;
+    },
+    get blocked() {
+      return blocked;
+    },
+  };
+}
+
+/** Pause both kinds without advancing their clocks or altering a saved shoe. */
+export function pauseSavedActivities(data: AppData): AppData {
+  if (
+    (!data.active || data.active.paused) &&
+    (!data.counting || data.counting.paused)
+  )
+    return data;
+  return {
+    ...data,
+    active: data.active ? { ...data.active, paused: true } : null,
+    counting: data.counting ? { ...data.counting, paused: true } : null,
+  };
+}
+
+export function serializeHistoryExport(
+  data: AppData,
+  recovery: { rawSavedData: string; reason: string } | null = null,
+  exportedAt = new Date().toISOString(),
+) {
+  return JSON.stringify(
+    { exportedAt, ...data, ...(recovery ? { recovery } : {}) },
+    null,
+    2,
+  );
+}
 const MODES = [
   "recognition",
   "running",
@@ -100,6 +160,18 @@ function cards(value: unknown, path: string, min = 0, max = 312): Card[] {
   );
   return result;
 }
+function completeDeck(deck: Card[], copies: number, path: string) {
+  const frequencies = new Map<string, number>();
+  for (const item of deck) {
+    const key = `${item.rank}${item.suit}`;
+    frequencies.set(key, (frequencies.get(key) ?? 0) + 1);
+  }
+  check(
+    frequencies.size === 52 &&
+      [...frequencies.values()].every((count) => count === copies),
+    `${path} has an invalid physical card composition`,
+  );
+}
 function sameCard(a: Card, b: Card | undefined) {
   return !!b && a.id === b.id && a.rank === b.rank && a.suit === b.suit;
 }
@@ -164,6 +236,7 @@ function countResult(value: unknown, path: string) {
   ])
     number(data[key], `${path}.${key}`, 0);
   number(data.speedMs, `${path}.speedMs`, 100, 60000);
+  if (data.automatic !== undefined) bool(data.automatic, `${path}.automatic`);
   number(data.exactAccuracy, `${path}.exactAccuracy`, 0, 1);
   list(data.answers, `${path}.answers`).forEach((answer, i) =>
     countAnswer(answer, `${path}.answers[${i}]`),
@@ -199,6 +272,13 @@ function session(value: unknown, path: string) {
   oneOf(data.kind, ["strategy", "simulator", "counting"], `${path}.kind`);
   rules(data.rules, `${path}.rules`);
   oneOf(data.feedback, ["coach", "challenge"], `${path}.feedback`);
+  if (data.sampling !== undefined)
+    oneOf(data.sampling, ["balanced", "realistic"], `${path}.sampling`);
+  if (data.checkpointEvery !== undefined)
+    check(
+      [0, 1, 3].includes(data.checkpointEvery as number),
+      `${path}.checkpointEvery is invalid`,
+    );
   bool(data.assisted, `${path}.assisted`);
   number(data.startedAt, `${path}.startedAt`, 0);
   optionalNumber(data.endedAt, `${path}.endedAt`, 0);
@@ -249,6 +329,7 @@ function shoe(value: unknown, path: string) {
   const data = object(value, path);
   rules(data.rules, `${path}.rules`);
   const deck = cards(data.cards, `${path}.cards`, 312, 312);
+  completeDeck(deck, 6, `${path}.cards`);
   const nextCard = number(
     data.nextCard,
     `${path}.nextCard`,
@@ -442,6 +523,26 @@ function counting(value: unknown, path: string) {
     );
     return;
   }
+  completeDeck(deck, 1, `${path}.deck`);
+  const expectedTotal =
+    data.mode === "recognition" || data.mode === "pairs"
+      ? 20
+      : data.mode === "countdown"
+        ? 4
+        : 10;
+  check(
+    total === expectedTotal,
+    `${path}.totalExercises does not match its mode`,
+  );
+  check(
+    data.phase !== "complete" || answers.length === total,
+    `${path} is marked complete before all checkpoints`,
+  );
+  check(
+    !["answer", "reveal"].includes(data.phase as string) ||
+      answers.length < total,
+    `${path} has an extra active checkpoint`,
+  );
   const exercise = object(data.exercise, `${path}.exercise`);
   text(exercise.id, `${path}.exercise.id`);
   oneOf(exercise.kind, KINDS, `${path}.exercise.kind`);
@@ -478,8 +579,20 @@ function counting(value: unknown, path: string) {
   if (data.mode === "decks" || data.mode === "true-count") {
     number(exercise.decksRemaining, `${path}.exercise.decksRemaining`, 0.5, 6);
     number(exercise.discardedCards, `${path}.exercise.discardedCards`, 0, 312);
+    check(
+      Number.isInteger((exercise.decksRemaining as number) * 2) &&
+        exercise.discardedCards ===
+          (6 - (exercise.decksRemaining as number)) * 52,
+      `${path}.exercise discard tray does not match its half-deck estimate`,
+    );
     if (data.mode === "true-count")
-      number(exercise.runningCount, `${path}.exercise.runningCount`);
+      number(
+        exercise.runningCount,
+        `${path}.exercise.runningCount`,
+        -Infinity,
+        Infinity,
+        true,
+      );
     const expected =
       data.mode === "decks"
         ? exercise.decksRemaining

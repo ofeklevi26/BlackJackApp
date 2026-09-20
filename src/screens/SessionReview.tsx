@@ -2,7 +2,13 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { handValue } from "../engine";
 import { countExplanation, signed } from "../counting";
-import { percent, summarize } from "../state/analytics";
+import {
+  assistanceProfile,
+  percent,
+  summarize,
+  summarizeCounts,
+} from "../state/analytics";
+import { bookmarkKey, setBookmark } from "../content/progress";
 import { useStore } from "../state/store";
 import type { Decision, Session } from "../state/types";
 import {
@@ -47,32 +53,18 @@ function DecisionDetail({
   onReplay: (decision: Decision) => void;
 }) {
   const { data, update } = useStore();
+  const bookmark = {
+    scenario: decision.scenario,
+    rules: session.rules,
+    countMode: session.topic === "deviations",
+  };
   const saved = data.bookmarks.some(
-    (item) =>
-      item.scenario.id === decision.scenario.id &&
-      item.rules.hitSoft17 === session.rules.hitSoft17 &&
-      item.rules.surrender === session.rules.surrender,
+    (item) => bookmarkKey(item) === bookmarkKey(bookmark),
   );
   function toggleSaved() {
     update((previous) => ({
       ...previous,
-      bookmarks: saved
-        ? previous.bookmarks.filter(
-            (item) =>
-              !(
-                item.scenario.id === decision.scenario.id &&
-                item.rules.hitSoft17 === session.rules.hitSoft17 &&
-                item.rules.surrender === session.rules.surrender
-              ),
-          )
-        : [
-            ...previous.bookmarks,
-            {
-              scenario: decision.scenario,
-              rules: session.rules,
-              countMode: session.topic === "deviations",
-            },
-          ],
+      bookmarks: setBookmark(previous.bookmarks, bookmark, !saved),
     }));
   }
   return (
@@ -198,6 +190,7 @@ export default function SessionReview({
   const [visible, setVisible] = useState(10);
   const stats = summarize(session.decisions);
   const count = session.countResult;
+  const countStats = summarizeCounts(count?.answers ?? []);
   const mistakes = session.decisions.filter(
     (decision) => !decision.correct && !decision.replay,
   );
@@ -256,7 +249,7 @@ export default function SessionReview({
               : "Challenge feedback"
           }
         />
-        <Chip label={session.assisted ? "Assisted" : "Unassisted"} />
+        <Chip label={titleCase(assistanceProfile(session))} />
         <Chip label={`${time(session.durationMs)} active practice`} />
       </View>
 
@@ -266,16 +259,14 @@ export default function SessionReview({
             <View style={s.stats}>
               <Stat
                 label="Exact count accuracy"
-                value={
-                  count.answers.length ? percent(count.exactAccuracy) : "—"
-                }
+                value={countStats.count ? percent(countStats.accuracy) : "—"}
                 detail={`${count.answers.filter((answer) => answer.absoluteError === 0).length} correct / ${count.answers.length} answers`}
               />
               <Stat
                 label="Average absolute error"
                 value={
                   count.answers.length
-                    ? count.meanAbsoluteError.toFixed(2)
+                    ? countStats.meanAbsoluteError.toFixed(2)
                     : "—"
                 }
                 detail={
@@ -288,7 +279,7 @@ export default function SessionReview({
                 label="Median response"
                 value={
                   count.answers.length
-                    ? `${(count.medianResponseMs / 1000).toFixed(1)}s`
+                    ? `${(countStats.medianMs / 1000).toFixed(1)}s`
                     : "—"
                 }
                 detail="Answer time after cards appear"
@@ -308,11 +299,13 @@ export default function SessionReview({
               <Chip label={titleCase(count.mode)} />
               <Chip
                 label={
-                  count.automatic
-                    ? `${(count.speedMs / 1000).toFixed(1)}s per card`
-                    : count.automatic === false
-                      ? "Tap to deal"
-                      : "Pace not recorded"
+                  count.mode === "decks" || count.mode === "true-count"
+                    ? "Self-paced prompts"
+                    : count.automatic
+                      ? `${(count.speedMs / 1000).toFixed(1)}s per card`
+                      : count.automatic === false
+                        ? "Tap to deal"
+                        : "Pace not recorded"
                 }
               />
               <Chip label={`${count.answers.length} answers`} />
@@ -373,6 +366,11 @@ export default function SessionReview({
               surrender {session.rules.surrender ? "on" : "off"} · double after
               split.
             </Body>
+            {session.kind === "strategy" && (
+              <Body style={s.note}>
+                Situation sampling: {session.sampling ?? "not recorded"}.
+              </Body>
+            )}
             <View style={s.stats}>
               <Stat
                 label="Unassisted"
@@ -477,8 +475,9 @@ export default function SessionReview({
               </Heading>
               <Body>
                 The net simulated result from {session.rounds} completed rounds.
-                One unit is the original stake. This is separate from skill
-                accuracy; short sessions can swing either way.
+                This is the change in virtual bankroll, including your chosen
+                wagers, doubles, splits, and insurance. It is separate from
+                skill accuracy; short sessions can swing either way.
               </Body>
             </Panel>
           )}

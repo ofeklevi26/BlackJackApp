@@ -17,7 +17,12 @@ import {
   startCountingSession,
   submitCountAnswer,
 } from "../src/counting";
-import { decodeSavedData } from "../src/state/persistence";
+import {
+  createSaveQueue,
+  decodeSavedData,
+  pauseSavedActivities,
+  serializeHistoryExport,
+} from "../src/state/persistence";
 import { newTraining } from "../src/state/training";
 import type { AppData, Session } from "../src/state/types";
 
@@ -313,4 +318,115 @@ test("invalid lesson maps and session entries fail with an actionable field path
     () => decode({ ...defaults(), bookmarks: {} }),
     /bookmarks must be a list/,
   );
+});
+
+test("a storage failure stops later queued writes and preserves the last stored copy", async () => {
+  let stored = "previous valid save";
+  const attempted: string[] = [];
+  const failures: unknown[] = [];
+  const queue = createSaveQueue(
+    async (value) => {
+      attempted.push(value);
+      if (value === "fails") throw new Error("storage quota");
+      stored = value;
+    },
+    (error) => failures.push(error),
+  );
+  void queue.enqueue("fails");
+  await queue.enqueue("queued after failure");
+  assert.deepEqual(attempted, ["fails"]);
+  assert.equal(stored, "previous valid save");
+  assert.equal(failures.length, 1);
+  assert.equal(queue.blocked, true);
+  queue.reset();
+  await queue.enqueue("explicit reset");
+  assert.equal(stored, "explicit reset");
+  assert.equal(queue.blocked, false);
+});
+
+test("reset invalidates stale queued writes and ignores an old in-flight failure", async () => {
+  const writes: string[] = [];
+  const failures: unknown[] = [];
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queue = createSaveQueue(
+    async (value) => {
+      writes.push(value);
+      if (value === "in flight") {
+        await pending;
+        throw new Error("old failure");
+      }
+    },
+    (error) => failures.push(error),
+  );
+  void queue.enqueue("in flight");
+  await Promise.resolve();
+  void queue.enqueue("stale queued save");
+  queue.reset();
+  const reset = queue.enqueue("reset state");
+  release();
+  await reset;
+  assert.deepEqual(writes, ["in flight", "reset state"]);
+  assert.deepEqual(failures, []);
+  assert.equal(queue.blocked, false);
+});
+
+test("history export includes a byte-exact malformed recovery copy without replacing in-memory progress", () => {
+  const data = defaults();
+  data.completedLessons = { basics: 1234 };
+  const rawSavedData = '{"sessions":[{"recoverable":"hand history"}], BROKEN';
+  const exported = JSON.parse(
+    serializeHistoryExport(
+      data,
+      { rawSavedData, reason: "Invalid JSON" },
+      "2026-09-20T00:00:00Z",
+    ),
+  );
+  assert.equal(exported.recovery.rawSavedData, rawSavedData);
+  assert.deepEqual(exported.completedLessons, { basics: 1234 });
+  assert.equal(exported.exportedAt, "2026-09-20T00:00:00Z");
+  assert.equal(JSON.parse(serializeHistoryExport(data)).recovery, undefined);
+});
+
+test("global background pause covers both activity kinds without changing cards or time", () => {
+  const data = defaults();
+  data.active = newTraining(data);
+  data.counting = startCountingSession(createCountingSetup(false), 1000, 51);
+  const paused = pauseSavedActivities(data);
+  assert.equal(paused.active?.paused, true);
+  assert.equal(paused.counting?.paused, true);
+  assert.deepEqual(paused.counting?.deck, data.counting.deck);
+  assert.equal(paused.counting?.activeMs, data.counting.activeMs);
+  assert.equal(pauseSavedActivities(paused), paused);
+  assert.equal(pauseSavedActivities(defaults()).active, null);
+});
+
+test("malformed counting phases and physical deck composition cannot create unrecoverable sessions", () => {
+  const data = defaults();
+  data.counting = startCountingSession(createCountingSetup(false), 1000, 51);
+  const completed = clone(data);
+  completed.counting!.phase = "complete";
+  assert.throws(
+    () => decode(completed),
+    /marked complete before all checkpoints/,
+  );
+  const length = clone(data);
+  length.counting!.totalExercises = 100;
+  assert.throws(() => decode(length), /totalExercises does not match its mode/);
+  const physical = clone(data);
+  const high = physical.counting!.deck.findIndex(
+    (card, i) => i > 1 && card.rank === "K",
+  );
+  physical.counting!.deck[high].rank = "Q";
+  assert.throws(() => decode(physical), /invalid physical card composition/);
+  const tray = clone(data);
+  tray.counting = startCountingSession(
+    { ...createCountingSetup(false), mode: "decks" },
+    1000,
+    51,
+  );
+  tray.counting.exercise!.discardedCards = 0;
+  assert.throws(() => decode(tray), /discard tray does not match/);
 });

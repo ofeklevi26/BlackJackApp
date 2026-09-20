@@ -175,6 +175,7 @@ function Settings({ close }: { close: () => void }) {
 }
 function Navigation() {
   const [settings, setSettings] = useState(false);
+  const { data, update } = useStore();
   return (
     <>
       <StatusBar style="light" />
@@ -204,7 +205,14 @@ function Navigation() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open settings"
-              onPress={() => setSettings(true)}
+              onPress={() => {
+                update((d) => ({
+                  ...d,
+                  active: d.active ? { ...d.active, paused: true } : null,
+                  counting: d.counting ? { ...d.counting, paused: true } : null,
+                }));
+                setSettings(true);
+              }}
               style={{ padding: 16, marginRight: 8 }}
             >
               <Ionicons name="options-outline" size={22} color={colors.muted} />
@@ -262,7 +270,7 @@ function Navigation() {
       <Modal
         visible={settings}
         transparent
-        animationType="fade"
+        animationType={data.settings.reducedMotion ? "none" : "fade"}
         onRequestClose={() => setSettings(false)}
       >
         <Settings close={() => setSettings(false)} />

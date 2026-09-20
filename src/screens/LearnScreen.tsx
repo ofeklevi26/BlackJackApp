@@ -179,7 +179,15 @@ function Exercise({
             ))}
           </ScrollView>
           <View style={s.between}>
-            <Text style={s.note}>
+            <Text
+              style={s.note}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={
+                revealed
+                  ? `Card revealed: ${cards[revealed - 1].rank}. ${revealed} of ${cards.length} exposed.`
+                  : `No cards exposed. ${cards.length} cards to reveal.`
+              }
+            >
               {revealed} / {cards.length} cards exposed
             </Text>
             {guided && (
@@ -288,6 +296,7 @@ function StrategyChart({
   const [group, setGroup] = useState<ChartGroup>("hard");
   const [rowIndex, setRowIndex] = useState(7);
   const [dealer, setDealer] = useState<Rank>("6");
+  const [sourceError, setSourceError] = useState("");
   const rows = CHART_ROWS[group];
   const row = rows[Math.min(rowIndex, rows.length - 1)];
   const scenario = useMemo(
@@ -438,7 +447,9 @@ function StrategyChart({
             </Text>
           </View>
         </View>
-        <Body>{answer.explanation}</Body>
+        <View accessibilityLiveRegion="polite">
+          <Body>{answer.explanation}</Body>
+        </View>
         <Button
           label="Practice this situation"
           onPress={() => onPractice(group, scenario)}
@@ -446,7 +457,12 @@ function StrategyChart({
         <Pressable
           accessibilityRole="link"
           onPress={() => {
-            void Linking.openURL(STRATEGY_SOURCE);
+            setSourceError("");
+            void Linking.openURL(STRATEGY_SOURCE).catch(() =>
+              setSourceError(
+                "The reference could not be opened. Check your connection and try again.",
+              ),
+            );
           }}
           style={s.sourceLink}
         >
@@ -454,6 +470,11 @@ function StrategyChart({
             Strategy reference · Wizard of Odds ↗
           </Text>
         </Pressable>
+        {!!sourceError && (
+          <Text style={s.note} accessibilityLiveRegion="polite">
+            {sourceError}
+          </Text>
+        )}
       </Panel>
     </>
   );
@@ -586,7 +607,7 @@ export default function LearnScreen({
                 <Pressable
                   key={item.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`Lesson ${index + 1}: ${item.title}, ${item.minutes} minutes${done ? ", completed" : ""}`}
+                  accessibilityLabel={`Lesson ${index + 1}: ${item.title}, ${item.minutes} minutes${done ? ", completed" : ""}${needsReview ? ", due for review" : ""}`}
                   onPress={() => setLessonId(item.id)}
                   style={({ pressed }) => [
                     s.lessonRow,

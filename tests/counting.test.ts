@@ -7,9 +7,12 @@ import {
   createCountingSetup,
   finishCountingSession,
   nextCountingExercise,
+  normalizeCountInput,
   revealNextCountingCard,
   startCountingSession,
   submitCountAnswer,
+  validCountInput,
+  COUNTING_MODES,
   type CountingState,
 } from "../src/counting";
 
@@ -209,4 +212,122 @@ test("invalid input is never recorded as an answer", () => {
   assert.equal(submitCountAnswer(state, Number.NaN), state);
   assert.equal(submitCountAnswer(state, Number.POSITIVE_INFINITY), state);
   assert.equal(submitCountAnswer(state, 0.5), state);
+});
+
+test("rapid Next taps cannot replace the next checkpoint or discard an exposed card", () => {
+  for (const { id: mode } of COUNTING_MODES) {
+    let state = revealToCheckpoint(
+      startCountingSession({ ...createCountingSetup(false), mode }, 1000, 817),
+    );
+    state = submitCountAnswer(state, state.exercise!.expected);
+    const paused = { ...state, paused: true };
+    assert.equal(
+      nextCountingExercise(paused),
+      paused,
+      `${mode} paused feedback`,
+    );
+    const next = nextCountingExercise(state);
+    assert.equal(nextCountingExercise(next), next, `${mode} duplicate Next`);
+    assert.equal(next.answers.length, 1);
+  }
+});
+
+test("negative input retains mathematical minus and rejects decimals instead of merging their digits", () => {
+  assert.equal(normalizeCountInput("−3"), "-3");
+  assert.equal(normalizeCountInput("  +2  "), "2");
+  assert.equal(normalizeCountInput("1.5"), "1.5");
+  for (const value of ["-3", "0", "25", "-0"])
+    assert.equal(validCountInput(value), true);
+  for (const value of ["", "-", "1.5", "1e2", "--3", "2-1", "NaN"])
+    assert.equal(validCountInput(value), false);
+});
+
+test("all six drills complete at all supported speeds with independently reconciled counts and errors", () => {
+  const oracle = (rank: string) =>
+    ["2", "3", "4", "5", "6"].includes(rank)
+      ? 1
+      : ["7", "8", "9"].includes(rank)
+        ? 0
+        : -1;
+  let runs = 0;
+  for (const { id: mode } of COUNTING_MODES)
+    for (const automatic of [false, true])
+      for (const speedMs of [600, 1200, 2000]) {
+        let state = startCountingSession(
+          { ...createCountingSetup(false), mode, automatic, speedMs },
+          1000,
+          321,
+        );
+        let expectedErrors = 0;
+        for (
+          let checkpoint = 0;
+          checkpoint < state.totalExercises;
+          checkpoint++
+        ) {
+          while (state.phase === "reveal") {
+            state = advanceCountingTime(state, speedMs);
+            state = revealNextCountingCard(state);
+          }
+          const exercise = state.exercise!;
+          const expected =
+            mode === "decks"
+              ? 6 - exercise.discardedCards! / 52
+              : mode === "true-count"
+                ? Math.floor(exercise.runningCount! / exercise.decksRemaining!)
+                : (mode === "running" || mode === "countdown"
+                    ? state.deck.slice(0, state.index)
+                    : exercise.cards
+                  ).reduce((sum, card) => sum + oracle(card.rank), 0);
+          assert.equal(
+            exercise.expected,
+            expected,
+            `${mode} checkpoint ${checkpoint}`,
+          );
+          assert.equal(
+            revealNextCountingCard(state),
+            state,
+            "automatic ticks stop at an unanswered checkpoint",
+          );
+          const paused = { ...state, paused: true };
+          assert.equal(advanceCountingTime(paused, 60000), paused);
+          state = advanceCountingTime(state, 1500);
+          const error =
+            checkpoint % 3 === 0
+              ? mode === "decks"
+                ? expected >= 5
+                  ? -0.5
+                  : 0.5
+                : -1
+              : 0;
+          expectedErrors += Math.abs(error);
+          state = submitCountAnswer(state, expected + error);
+          assert.equal(
+            submitCountAnswer(state, expected),
+            state,
+            "first answer survives repeated submission",
+          );
+          assert.equal(
+            state.answers[state.answers.length - 1].responseMs,
+            1500,
+          );
+          state = advanceCountingTime(state, 4000);
+          state = nextCountingExercise(state);
+        }
+        assert.equal(state.phase, "complete");
+        const result = finishCountingSession(state, 90000);
+        assert.equal(result.answers.length, state.totalExercises);
+        assert.equal(
+          result.meanAbsoluteError,
+          expectedErrors / state.totalExercises,
+        );
+        assert.equal(
+          result.exactAccuracy,
+          1 - Math.ceil(state.totalExercises / 3) / state.totalExercises,
+        );
+        assert.equal(result.medianResponseMs, 1500);
+        assert.equal(result.automatic, automatic);
+        assert.equal(result.speedMs, speedMs);
+        runs++;
+      }
+  assert.equal(runs, 36);
 });

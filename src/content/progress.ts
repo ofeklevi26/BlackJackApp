@@ -1,15 +1,29 @@
 import { handValue } from "../engine";
 import { comparisonKey } from "../state/analytics";
-import type { Decision, Session } from "../state/types";
+import type { AppData, Decision, Session } from "../state/types";
 
 export function progressCohortKey(session: Session) {
-  const count = session.countResult;
-  return (
-    comparisonKey(session) +
-    (count
-      ? `/${count.mode}/${count.speedMs}/${count.automatic === undefined ? "legacy" : count.automatic ? "automatic" : "manual"}`
-      : "")
-  );
+  return comparisonKey(session);
+}
+
+type Bookmark = AppData["bookmarks"][number];
+export function bookmarkKey(bookmark: Bookmark) {
+  return JSON.stringify([
+    bookmark.scenario.id,
+    bookmark.rules.hitSoft17,
+    bookmark.rules.surrender,
+    bookmark.countMode,
+  ]);
+}
+
+export function setBookmark(
+  bookmarks: Bookmark[],
+  bookmark: Bookmark,
+  saved: boolean,
+): Bookmark[] {
+  const key = bookmarkKey(bookmark);
+  const remaining = bookmarks.filter((item) => bookmarkKey(item) !== key);
+  return saved ? [...remaining, bookmark] : remaining;
 }
 
 export type HeatmapCell = { count: number; correct: number; example: Decision };

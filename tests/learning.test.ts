@@ -6,7 +6,12 @@ import {
   LESSON_REVIEW_MS,
   LESSONS,
 } from "../src/content/lessons";
-import { buildHeatmap, progressCohortKey } from "../src/content/progress";
+import {
+  bookmarkKey,
+  buildHeatmap,
+  progressCohortKey,
+  setBookmark,
+} from "../src/content/progress";
 import {
   DEVIATION_RULES,
   handValue,
@@ -171,14 +176,72 @@ test("progress comparisons separate counting paces", () => {
       countResult: { ...base.countResult!, automatic: true },
     }),
   );
-  assert.notEqual(
+  assert.equal(
     progressCohortKey({ ...base, sampling: "balanced" }),
-    progressCohortKey({ ...base, sampling: "realistic" }),
+    progressCohortKey({
+      ...base,
+      sampling: "realistic",
+      rules: { hitSoft17: true, surrender: false },
+    }),
+    "Strategy sampling and table rules do not change a standalone count drill",
+  );
+  assert.equal(
+    progressCohortKey({
+      ...base,
+      countResult: { ...base.countResult!, automatic: false, speedMs: 600 },
+    }),
+    progressCohortKey({
+      ...base,
+      countResult: { ...base.countResult!, automatic: false, speedMs: 1200 },
+    }),
+    "Unused configured speed must not split manual dealing sessions",
+  );
+  assert.equal(
+    progressCohortKey({
+      ...base,
+      topic: "true-count",
+      countResult: {
+        ...base.countResult!,
+        mode: "true-count",
+        automatic: true,
+        speedMs: 600,
+      },
+    }),
+    progressCohortKey({
+      ...base,
+      topic: "true-count",
+      countResult: {
+        ...base.countResult!,
+        mode: "true-count",
+        automatic: false,
+        speedMs: 1200,
+      },
+    }),
+    "True-count prompts do not deal cards at a timed pace",
   );
   assert.equal(
     progressCohortKey(base),
     progressCohortKey({ ...base, id: "later", startedAt: 3 }),
   );
+});
+
+test("saved-hand identity preserves rules and count mode, and repeated removal cannot delete another hand", () => {
+  const first = {
+    scenario: makeScenario(["10", "6"], "10"),
+    rules: { hitSoft17: false, surrender: false },
+    countMode: false,
+  };
+  const second = { ...first, scenario: makeScenario(["A", "7"], "9") };
+  const countVariant = { ...first, countMode: true };
+  assert.notEqual(bookmarkKey(first), bookmarkKey(countVariant));
+  const saved = setBookmark(setBookmark([second], first, true), first, true);
+  assert.equal(saved.length, 2, "Repeated save events are idempotent");
+  const removedTwice = setBookmark(
+    setBookmark(saved, first, false),
+    first,
+    false,
+  );
+  assert.deepEqual(removedTwice, [second]);
 });
 
 test("seven-day lesson review uses real completion timestamps and resets after review", () => {

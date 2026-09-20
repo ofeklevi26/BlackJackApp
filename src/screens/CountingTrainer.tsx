@@ -22,10 +22,12 @@ import {
   describeMode,
   finishCountingSession,
   nextCountingExercise,
+  normalizeCountInput,
   revealNextCountingCard,
   signed,
   startCountingSession,
   submitCountAnswer,
+  validCountInput,
 } from "../counting";
 
 export type { CountingState, CountResult } from "../counting";
@@ -137,14 +139,7 @@ function NumberEntry({
       <TextInput
         accessibilityLabel="Your count"
         value={value}
-        onChangeText={(text) =>
-          onChange(
-            text
-              .replace(/[^0-9-]/g, "")
-              .replace(/(?!^)-/g, "")
-              .slice(0, 4),
-          )
-        }
+        onChangeText={(text) => onChange(normalizeCountInput(text))}
         placeholder="Your count"
         placeholderTextColor={colors.muted}
         onSubmitEditing={onSubmit}
@@ -177,8 +172,13 @@ function NumberEntry({
       <Button
         label="Check my count"
         onPress={onSubmit}
-        disabled={disabled || !/^-?\d+$/.test(value)}
+        disabled={disabled || !validCountInput(value)}
       />
+      {value !== "" && value !== "-" && !validCountInput(value) && (
+        <Body style={{ color: colors.gold }}>
+          Enter a whole count, such as −3, 0, or +2.
+        </Body>
+      )}
     </View>
   );
 }
@@ -190,8 +190,10 @@ export default function CountingTrainer({
   onExit,
   settings,
 }: Props) {
-  const [state, setState] = useState<CountingState>(
-    () => initialState ?? createCountingSetup(settings.assistance),
+  const [state, setState] = useState<CountingState>(() =>
+    initialState
+      ? { ...initialState, paused: initialState.phase !== "setup" }
+      : createCountingSetup(settings.assistance),
   );
   const [input, setInput] = useState("");
   const [showWalkthrough, setShowWalkthrough] = useState(false);
@@ -202,6 +204,7 @@ export default function CountingTrainer({
     AppState.currentState === "active" || AppState.currentState == null,
   );
   const completedRef = useRef(false);
+  const submittedExerciseRef = useRef<string | null>(null);
   stateRef.current = state;
   saveRef.current = onSave;
 
@@ -223,6 +226,15 @@ export default function CountingTrainer({
     if (state.phase !== "setup" && !completedRef.current)
       saveRef.current(state);
   }, [state]);
+
+  // Settings and app-wide lifecycle controls may pause a mounted trainer.
+  // Resuming is always an explicit action inside the visible trainer.
+  useEffect(() => {
+    if (initialState?.paused)
+      apply((previous) =>
+        previous.paused ? previous : { ...previous, paused: true },
+      );
+  }, [initialState?.paused, apply]);
 
   useEffect(() => {
     const timer = setInterval(() => apply((previous) => previous), 1000);
@@ -262,9 +274,11 @@ export default function CountingTrainer({
     if (
       stateRef.current.phase !== "answer" ||
       stateRef.current.paused ||
+      submittedExerciseRef.current === stateRef.current.exercise?.id ||
       !Number.isFinite(value)
     )
       return;
+    submittedExerciseRef.current = stateRef.current.exercise?.id ?? null;
     if (settings.haptics) {
       void Haptics.notificationAsync(
         value === stateRef.current.exercise?.expected
@@ -303,14 +317,14 @@ export default function CountingTrainer({
   const mode = describeMode(state.mode);
   const exercise = state.exercise;
   const latestAnswer =
-    state.phase === "feedback"
+    state.phase === "feedback" || state.phase === "complete"
       ? state.answers[state.answers.length - 1]
       : undefined;
   const cardMode = !["decks", "true-count"].includes(state.mode);
 
   if (state.phase === "setup")
     return (
-      <Page>
+      <Page key="counting-setup">
         <View style={s.between}>
           <Text style={s.eyebrow}>BUILD YOUR COUNTING INSTINCT</Text>
           <Button label="Back" variant="ghost" onPress={onExit} />
@@ -440,7 +454,7 @@ export default function CountingTrainer({
     );
 
   return (
-    <Page>
+    <Page key={`counting-${state.id}-${exercise?.id ?? "session"}`}>
       <View style={s.between}>
         <View style={{ gap: 5 }}>
           <Text style={s.eyebrow}>COUNTING LAB</Text>
@@ -499,7 +513,11 @@ export default function CountingTrainer({
           />
           {state.answers.length > 0 && (
             <Button
-              label="Finish this shorter session"
+              label={
+                state.answers.length >= state.totalExercises
+                  ? "See session results"
+                  : "Finish this shorter session"
+              }
               variant="secondary"
               onPress={finish}
             />
@@ -649,7 +667,7 @@ export default function CountingTrainer({
                   value={input}
                   onChange={setInput}
                   onSubmit={() => {
-                    if (/^-?\d+$/.test(input)) answer(Number(input));
+                    if (validCountInput(input)) answer(Number(input));
                   }}
                   disabled={false}
                 />
