@@ -5,9 +5,11 @@ import {
   legalActions,
   playAction,
   startRound,
+  SHOE_DECK_COUNTS,
   type Action,
   type Rules,
   type ShoeSession,
+  type ShoeDeckCount,
 } from "../engine";
 
 export const CASINO_MIN_BET = 5;
@@ -46,13 +48,14 @@ export function createCasino(
   rules: Rules,
   seed = Date.now(),
   now = Date.now(),
+  decks: ShoeDeckCount = 6,
 ): CasinoState {
   return {
     version: 1,
     id: `casino-${now}-${seed}`,
     createdAt: now,
     revision: 0,
-    shoe: { ...createShoe(seed, rules), bankroll: CASINO_REFILL },
+    shoe: { ...createShoe(seed, rules, 0.75, decks), bankroll: CASINO_REFILL },
     selectedBet: 10,
     lastBet: 10,
     deposits: CASINO_REFILL,
@@ -62,6 +65,36 @@ export function createCasino(
 
 function current(table: CasinoState, expectedRevision?: number) {
   return expectedRevision === undefined || table.revision === expectedRevision;
+}
+
+/** Start a separate, fully funded casino session only after outstanding wagers settle. */
+export function casinoNewSession(
+  table: CasinoState,
+  decks: ShoeDeckCount,
+  expectedRevision?: number,
+  seed = Date.now(),
+  now = Date.now(),
+): CasinoState {
+  if (
+    !current(table, expectedRevision) ||
+    casinoRoundActive(table) ||
+    !(SHOE_DECK_COUNTS as readonly number[]).includes(decks)
+  )
+    return table;
+  const previousShuffleSeed =
+    table.shoe.seed + (table.shoe.shuffleNumber - 1) * 104729;
+  const fresh = createCasino(
+    table.shoe.rules,
+    seed === previousShuffleSeed ? seed + 1 : seed,
+    now,
+    decks,
+  );
+  return {
+    ...fresh,
+    id: `${fresh.id}-${table.revision + 1}`,
+    // Keep revisions monotonic so taps queued before reset cannot affect the fresh shoe.
+    revision: table.revision + 1,
+  };
 }
 function updated(table: CasinoState, shoe: ShoeSession): CasinoState {
   return shoe === table.shoe

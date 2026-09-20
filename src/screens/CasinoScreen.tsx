@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -9,7 +9,14 @@ import {
 } from "react-native";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
-import { handValue, type Action, type Card } from "../engine";
+import {
+  handValue,
+  shoeDeckCount,
+  SHOE_DECK_COUNTS,
+  type Action,
+  type Card,
+  type ShoeDeckCount,
+} from "../engine";
 import { Body, Button as SharedButton, DetailSheet, PlayingCard } from "../ui";
 import { colors } from "../ui/theme";
 import { useStore } from "../state/store";
@@ -30,6 +37,7 @@ import {
   casinoLegalActions,
   casinoMoney,
   casinoNet,
+  casinoNewSession,
   casinoRefill,
   casinoRepeatBet,
   casinoRoundActive,
@@ -216,6 +224,9 @@ function CompactSingleRound({ table }: { table: CasinoState }) {
 export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const { data, update, storageError } = useStore();
   const [showRules, setShowRules] = useState(false);
+  const [selectedDecks, setSelectedDecks] = useState<ShoeDeckCount>(6);
+  const [shoeNotice, setShoeNotice] = useState("");
+  const previousShoe = useRef<{ id: string; number: number } | null>(null);
   const { height, width, fontScale } = useWindowDimensions();
   const compact = height < 740 && fontScale <= 1.2;
   const smallCards = height < 940 || width < 600;
@@ -230,6 +241,16 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
           : { ...previous, casino: createCasino(previous.settings.rules) },
       );
   }, [update, needsTable]);
+
+  useEffect(() => {
+    if (!table) return;
+    const previous = previousShoe.current;
+    if (previous && previous.id !== table.id)
+      setShoeNotice("Fresh session · new shoe and $1,000 in virtual chips");
+    else if (previous && table.shoe.shuffleNumber > previous.number)
+      setShoeNotice(`Fresh shuffle · shoe ${table.shoe.shuffleNumber}`);
+    previousShoe.current = { id: table.id, number: table.shoe.shuffleNumber };
+  }, [table?.id, table?.shoe.shuffleNumber]);
 
   function change(
     transition: (value: CasinoState) => CasinoState,
@@ -263,6 +284,11 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const committed = casinoCommitted(table);
   const legal = casinoLegalActions(table);
   const revision = table.revision;
+  const deckCount = shoeDeckCount(table.shoe);
+  const totalCards = table.shoe.cards.length;
+  const remainingCards = Math.max(0, totalCards - table.shoe.nextCard);
+  const remainingDecks = Math.round((remainingCards / 52) * 2) / 2;
+  const dealtPercent = Math.min(100, (table.shoe.nextCard / totalCards) * 100);
   const activeBet = round?.hands[round.activeHand]?.bet ?? 0;
   const resultColor =
     !settled || round.profit === 0
@@ -282,9 +308,12 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
         </View>
         <View style={s.headerActions}>
           <Button
-            label="Rules"
+            label="Table"
             variant="ghost"
-            onPress={() => setShowRules(true)}
+            onPress={() => {
+              setSelectedDecks(deckCount);
+              setShowRules(true);
+            }}
           />
           <Button label="Exit" variant="ghost" onPress={onExit} />
         </View>
@@ -476,16 +505,12 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
                     );
                   })}
                 </View>
-              ) : (
-                <View
-                  style={[s.emptyBet, compact && { minHeight: 42, gap: 2 }]}
-                >
-                  <Text style={[s.emptyBetMark, compact && { fontSize: 26 }]}>
-                    ♠
-                  </Text>
+              ) : !compact ? (
+                <View style={s.emptyBet}>
+                  <Text style={s.emptyBetMark}>♠</Text>
                   <Text style={s.feltCaption}>YOUR SEAT IS READY</Text>
                 </View>
-              )}
+              ) : null}
             </>
           )}
           {!!round?.insuranceBet && (
@@ -497,10 +522,39 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
             </Text>
           )}
         </View>
-        <Text style={s.caption}>
-          Virtual chips only · Table {casinoMoney(CASINO_MIN_BET)}–
-          {casinoMoney(CASINO_MAX_BET)} · Shoe {table.shoe.shuffleNumber}
-        </Text>
+        <View style={s.shoeMeter}>
+          <View style={s.controlHeading}>
+            <Text style={s.caption}>
+              {deckCount}-deck shoe · #{table.shoe.shuffleNumber}
+            </Text>
+            <Text style={s.caption}>
+              About {remainingDecks} {remainingDecks === 1 ? "deck" : "decks"}{" "}
+              left
+            </Text>
+          </View>
+          <View
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={`Cards dealt from the ${deckCount}-deck shoe`}
+            accessibilityValue={{
+              min: 0,
+              max: totalCards,
+              now: table.shoe.nextCard,
+              text: `${table.shoe.nextCard} dealt; ${remainingCards} of ${totalCards} cards remain`,
+            }}
+            style={s.shoeTrack}
+          >
+            <View style={[s.shoeFill, { width: `${dealtPercent}%` }]} />
+          </View>
+          {!!shoeNotice && (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[s.caption, { color: colors.green }]}
+            >
+              {shoeNotice}
+            </Text>
+          )}
+        </View>
         {storageError && (
           <Text accessibilityLiveRegion="polite" style={s.storageWarning}>
             {storageError}
@@ -680,9 +734,10 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
                       : "Choose your chips to deal"
                 }
                 disabled={!casinoCanDeal(table)}
-                onPress={() =>
-                  change((value) => casinoDeal(value, revision), true)
-                }
+                onPress={() => {
+                  setShoeNotice("");
+                  change((value) => casinoDeal(value, revision), true);
+                }}
               />
             )}
           </>
@@ -690,14 +745,99 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
       </View>
       <DetailSheet
         visible={showRules}
-        title="Table rules"
+        title="Your table"
         reducedMotion={data.settings.reducedMotion}
         onClose={() => setShowRules(false)}
       >
+        <View style={s.sessionPanel}>
+          <Text accessibilityRole="header" style={s.controlTitle}>
+            Shoe & new session
+          </Text>
+          <Body>Choose how many decks go into your next fresh session.</Body>
+          <View style={s.deckOptions}>
+            {SHOE_DECK_COUNTS.map((decks) => (
+              <Pressable
+                key={decks}
+                accessibilityRole="button"
+                accessibilityLabel={`${decks} ${decks === 1 ? "deck" : "decks"} for a fresh session`}
+                accessibilityState={{ selected: selectedDecks === decks }}
+                onPress={() => setSelectedDecks(decks)}
+                style={({ pressed }) => [
+                  s.deckOption,
+                  selectedDecks === decks && s.deckSelected,
+                  { opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <Text
+                  style={[
+                    s.deckNumber,
+                    selectedDecks === decks && { color: colors.green },
+                  ]}
+                >
+                  {decks}
+                </Text>
+                <Text style={s.caption}>{decks === 1 ? "deck" : "decks"}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Body>
+            Start with a freshly shuffled shoe and {casinoMoney(CASINO_REFILL)}{" "}
+            in virtual chips. The count, discard tray, completed rounds, and
+            table net return to zero. Your table rules stay the same.
+          </Body>
+          {active && (
+            <Text style={{ color: colors.gold, fontSize: 14, lineHeight: 20 }}>
+              Finish the current hand first. Your wagers stay on the table until
+              it settles.
+            </Text>
+          )}
+          <Button
+            label="Start fresh session"
+            disabled={active}
+            onPress={() => {
+              const expectedId = table.id;
+              const expectedRevision = revision;
+              const decks = selectedDecks;
+              const now = Date.now();
+              const seed = Math.floor(Math.random() * 0x7fffffff);
+              change(
+                (value) =>
+                  value.id !== expectedId
+                    ? value
+                    : casinoNewSession(
+                        value,
+                        decks,
+                        expectedRevision,
+                        seed,
+                        now,
+                      ),
+                true,
+              );
+              setShowRules(false);
+            }}
+          />
+        </View>
+        <Text accessibilityRole="header" style={s.controlTitle}>
+          Current shoe
+        </Text>
         <Body>
-          Six decks · blackjack pays 3:2 · dealer{" "}
-          {table.shoe.rules.hitSoft17 ? "hits" : "stands on"} soft 17 · dealer
-          checks for blackjack.
+          {deckCount} {deckCount === 1 ? "deck" : "decks"} · shoe{" "}
+          {table.shoe.shuffleNumber} · {table.shoe.nextCard} cards dealt ·{" "}
+          {remainingCards} of {totalCards} cards remaining.
+        </Body>
+        <Body>
+          The table shuffles between rounds at the 75% cut card, or earlier when
+          too few cards remain to safely finish a full round. The shoe number
+          increases after each automatic shuffle. Small shoes can reach the
+          safety limit sooner.
+        </Body>
+        <Text accessibilityRole="header" style={s.controlTitle}>
+          Table rules
+        </Text>
+        <Body>
+          {deckCount} {deckCount === 1 ? "deck" : "decks"} · blackjack pays 3:2
+          · dealer {table.shoe.rules.hitSoft17 ? "hits" : "stands on"} soft 17 ·
+          dealer checks for blackjack.
         </Body>
         <Body>
           Double on the first two cards, including after splitting. Split up to
@@ -716,8 +856,8 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
         </Body>
         <Body>
           This table uses virtual money only. There are no purchases, deposits
-          of real money, or cashouts. Your saved table keeps these rules until
-          you reset all app progress.
+          of real money, or cashouts. Wagers range from{" "}
+          {casinoMoney(CASINO_MIN_BET)} to {casinoMoney(CASINO_MAX_BET)}.
         </Body>
         <View style={s.controlHeading}>
           <Body>Completed rounds {table.shoe.rounds}</Body>
@@ -729,6 +869,37 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
 }
 
 const s = StyleSheet.create({
+  shoeMeter: { width: "100%", maxWidth: 920, gap: 3 },
+  shoeTrack: {
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: colors.surface2,
+    overflow: "hidden",
+  },
+  shoeFill: { height: 3, backgroundColor: colors.green },
+  sessionPanel: {
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    borderRadius: 16,
+    gap: 12,
+  },
+  deckOptions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  deckOption: {
+    flexGrow: 1,
+    flexBasis: 42,
+    minWidth: 44,
+    minHeight: 58,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  deckSelected: { borderColor: colors.green, backgroundColor: "#163A34" },
+  deckNumber: { color: colors.text, fontSize: 20, fontWeight: "600" },
   screen: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
   compactCard: {
     width: 44,

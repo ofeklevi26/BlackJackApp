@@ -1,6 +1,12 @@
 # Verification
 
-Latest verification: September 20, 2026. See the [practice and casino follow-up](PRACTICE-CASINO-VERIFICATION.md) and the earlier [full QA report](QA-REPORT.md) for coverage and device limits.
+Latest verification: September 20, 2026. See [configurable casino shoes](SHOE-VERIFICATION.md), the [practice and casino follow-up](PRACTICE-CASINO-VERIFICATION.md), and the earlier [full QA report](QA-REPORT.md) for coverage and device limits.
+
+## Selectable shoes and fresh sessions
+
+- Type checking and all **129 tests** passed; all three platform exports passed.
+- All five physical shoe sizes, saved rounds, new-session guards, and 4,000 randomized plus 200 adversarial rounds were verified.
+- Browser checks exercised single-deck depletion, reload persistence, automatic shuffling, active-hand reset protection, and an eight-deck fresh session at 360×640.
 
 ## Compact practice and casino update
 

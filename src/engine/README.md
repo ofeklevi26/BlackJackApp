@@ -4,7 +4,7 @@ All exports are available from `src/engine/index.ts`. This directory has no UI o
 
 ## Supported table
 
-Six decks, blackjack 3:2, American hole card and dealer peek, double on any initial two cards, double after split, maximum four hands, no ace resplitting, and one additional card on each split ace. S17/H17 and late surrender on/off are the only configurable rule variations. Late surrender is available only on the original two-card hand after a negative dealer peek. Split 21 pays 1:1. Any two equal-value cards, including different ten-valued ranks, may be split.
+Training uses six decks. The finite-shoe engine also supports 1, 2, 4, and 8 decks for ungraded casino play; changing the physical shoe size does not change or extend the strategy evaluator's source scope. All shoes pay blackjack 3:2 and use American hole card and dealer peek, double on any initial two cards, double after split, maximum four hands, no ace resplitting, and one additional card on each split ace. S17/H17 and late surrender on/off are the other configurable rule variations. Late surrender is available only on the original two-card hand after a negative dealer peek. Split 21 pays 1:1. Any two equal-value cards, including different ten-valued ranks, may be split.
 
 The evaluator implements the total-dependent strategy in the [Wizard of Odds 4–8 deck reference](https://wizardofodds.com/games/blackjack/strategy/4-decks/), including its H17 changes and [six-deck surrender treatment](https://wizardofodds.com/games/blackjack/surrender/). It is not a composition-dependent finite-deck expected-value solver. Rules and source scope are stored in `SOURCE_METADATA` (checked September 20, 2026).
 
@@ -17,7 +17,7 @@ Count-based playing practice is deliberately limited to six introductory [Hi-Lo 
 ## Shoe lifecycle
 
 ```ts
-let session = createShoe(42, DEFAULT_RULES, 0.75);
+let session = createShoe(42, DEFAULT_RULES, 0.75, 6);
 session = startRound(session, 1, session.rounds);
 if (session.round?.phase === "insurance") {
   session = answerInsurance(session, false, session.round.id);
@@ -30,7 +30,21 @@ if (situation) {
 
 Transitions return new state and preserve the input. Supply expected scenario/round IDs to reject delayed or duplicate UI submissions. Passing the same completed action has no effect; repeated hits require a fresh scenario ID. Illegal actions do nothing. State can be serialized directly to JSON for persistence.
 
-The physical shoe is seeded and finite. An active round never shuffles. At the next round boundary, reaching the penetration threshold (or fewer than 73 cards remaining) replaces the shoe and resets the running count. The reserve guarantees the one-seat table can finish even an unusually long four-hand round; penetration settings above roughly 76% can therefore shuffle early. This does not affect the default 75% cut card. Player cards and the dealer upcard are exposed as dealt. The hole card contributes nothing until it is revealed. To give a consistent correction sequence, this simulator reveals the hole card at every round end, including all-bust or surrendered rounds; a casino may instead discard it unseen. Dealer drawing stops when no surviving non-natural hand requires comparison. `visibleCards` returns the exposure sequence for the entire current shoe; `seenIds` prevents any card from being counted twice.
+`createShoe(seed, rules, penetration = 0.75, decks = 6)` accepts `SHOE_DECK_COUNTS`: 1, 2, 4, 6, or 8. `shoeDeckCount(session)` derives the size from the physical cards, so existing six-deck saves require no additional field. Shuffles preserve the selected size.
+
+The physical shoe is seeded and finite. An active round never shuffles. At the next round boundary, reaching the penetration threshold or falling below the fixed safety reserve replaces the shoe and resets the running count. The new round's log reports whether the cut card or the safety reserve caused the shuffle. Reserves, returned by `minimumShoeReserve`, are:
+
+| Decks | Cards needed to begin a round |
+| ----- | ----------------------------- |
+| 1     | 33                            |
+| 2     | 45                            |
+| 4     | 61                            |
+| 6     | 73                            |
+| 8     | 81                            |
+
+These conservative reserves guarantee that even four unusually long split hands and the dealer can finish. With every ace valued as one, each player hand ends with at most 30 points and the dealer with at most 26; a whole round therefore uses at most 146 points. For each shoe size, the reserve is the smallest number of the full shoe's lowest-valued cards whose total exceeds 146. Any set of that many physical cards has at least as many points. The shuffle decision depends only on the number of cards remaining and the selected shoe size, never on hidden composition or future card order. Small shoes can consequently shuffle before the requested 75% cut card. `MIN_SHOE_RESERVE` remains 73 for compatibility with the original six-deck API.
+
+Player cards and the dealer upcard are exposed as dealt. The hole card contributes nothing until it is revealed. To give a consistent correction sequence, this simulator reveals the hole card at every round end, including all-bust or surrendered rounds; a casino may instead discard it unseen. Dealer drawing stops when no surviving non-natural hand requires comparison. `visibleCards` returns the exposure sequence for the entire current shoe; `seenIds` prevents any card from being counted twice.
 
 Splitting deals the next card to the active hand first. The second split hand receives its next card when it becomes active, so future split cards cannot affect an earlier decision's count. Split aces finish automatically after one additional card.
 
@@ -45,3 +59,5 @@ Pass the active rules as the fifth argument to `generateScenario(seed, topic, sa
 ## Verification
 
 `tests/engine.test.ts` uses independent fixed chart answers, H17/surrender regressions, count boundaries, seeded generation, physical card invariants, controlled deals for payouts and splitting, delayed-submission checks, and hundreds of fully played rounds for cumulative accounting and visibility.
+
+`tests/shoe-sizes.test.ts` checks all five physical sizes, old-save size inference, deterministic reshuffles and their fixed boundaries, hidden-card counts, five consecutive rounds in one single-deck shoe, 200 adversarial four-hand rounds from the lowest-valued reserve tails, and 4,000 randomized rounds across all sizes and both dealer rules with JSON restoration between transitions.

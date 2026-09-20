@@ -2,10 +2,40 @@ import { cardValue, createDeck, handValue, hiLo, trueCount } from "./cards";
 import { legalActions } from "./strategy";
 import { Action, Card, DEFAULT_RULES, Rules, Scenario } from "./types";
 
-// Four player hands contain at most 4×30 low-valued points and the dealer 26.
-// In six decks, even the 73 lowest cards total 148 (aces valued as one), above 146.
-// Keeping 73 cards therefore guarantees this table cannot exhaust mid-round.
-export const MIN_SHOE_RESERVE = 73;
+export const SHOE_DECK_COUNTS = [1, 2, 4, 6, 8] as const;
+export type ShoeDeckCount = (typeof SHOE_DECK_COUNTS)[number];
+
+function checkedDeckCount(decks: number): ShoeDeckCount {
+  if (!(SHOE_DECK_COUNTS as readonly number[]).includes(decks))
+    throw new RangeError("Choose a shoe of 1, 2, 4, 6, or 8 decks.");
+  return decks as ShoeDeckCount;
+}
+
+/** Fixed reserve derived from the full physical shoe, never its unseen order. */
+export function minimumShoeReserve(decks: ShoeDeckCount): number {
+  checkedDeckCount(decks);
+  // Value each ace as one. A player hand can reach at most 30 points: at most
+  // 20 before the final draw, plus at most 10. Four hands contribute <=120.
+  // Dealer draws from <=16 low points (soft 17 has only 7), finishing at <=26.
+  // Hence every round consumes <=146 low points, including all split cards.
+  // The first K sorted cards whose sum exceeds 146 guarantee an unused card
+  // even in the longest legal round. Any other K physical cards sum at least
+  // as much, so this guarantee does not depend on the hidden composition.
+  let cards = 0;
+  let points = 0;
+  for (let value = 1; value <= 10; value++) {
+    const copies = (value === 10 ? 16 : 4) * decks;
+    for (let copy = 0; copy < copies; copy++) {
+      cards++;
+      points += value;
+      if (points > 146) return cards;
+    }
+  }
+  throw new RangeError("The shoe cannot cover a complete round.");
+}
+
+/** Legacy six-deck reserve; use minimumShoeReserve for configurable shoes. */
+export const MIN_SHOE_RESERVE = minimumShoeReserve(6);
 
 export type PlayerHand = {
   id: string;
@@ -44,16 +74,23 @@ export type ShoeSession = {
   penetration: number;
 };
 
+/** Derive the size so existing saved six-deck sessions need no migration. */
+export function shoeDeckCount(session: ShoeSession): ShoeDeckCount {
+  return checkedDeckCount(session.cards.length / 52);
+}
+
 export function createShoe(
   seed = Date.now(),
   rules: Rules = DEFAULT_RULES,
   penetration = 0.75,
+  decks: ShoeDeckCount = 6,
 ): ShoeSession {
   if (!Number.isFinite(penetration) || penetration < 0.25 || penetration > 0.85)
     throw new RangeError("Set the cut card between 25% and 85% of the shoe.");
+  checkedDeckCount(decks);
   return {
     rules: { ...rules },
-    cards: createDeck(seed, 6),
+    cards: createDeck(seed, decks),
     nextCard: 0,
     discarded: [],
     runningCount: 0,
@@ -260,14 +297,22 @@ export function startRound(
   )
     throw new RangeError("Bet 0.5–100 virtual units in half-unit steps.");
   let next = clone(session);
+  const decks = shoeDeckCount(next);
+  const cutCardReached =
+    next.nextCard >= Math.floor(next.cards.length * next.penetration);
+  let shuffleNotice: string | undefined;
   if (
-    next.nextCard >= Math.floor(next.cards.length * next.penetration) ||
-    next.cards.length - next.nextCard < MIN_SHOE_RESERVE
+    cutCardReached ||
+    next.cards.length - next.nextCard < minimumShoeReserve(decks)
   ) {
+    shuffleNotice = cutCardReached
+      ? `Cut card reached: shuffled a fresh ${decks}-deck shoe between rounds.`
+      : `Early safety shuffle: fewer than ${minimumShoeReserve(decks)} cards remained to safely finish a round. Shuffled a fresh ${decks}-deck shoe.`;
     const replacement = createShoe(
       next.seed + next.shuffleNumber * 104729,
       next.rules,
       next.penetration,
+      decks,
     );
     next = {
       ...replacement,
@@ -301,7 +346,10 @@ export function startRound(
     insuranceBet: 0,
     insuranceProfit: 0,
     profit: 0,
-    log: [`Bet ${bet} virtual units before the deal.`],
+    log: [
+      ...(shuffleNotice ? [shuffleNotice] : []),
+      `Bet ${bet} virtual units before the deal.`,
+    ],
   };
   if (upcard.rank !== "A") afterPeek(next);
   return next;

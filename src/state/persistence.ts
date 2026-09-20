@@ -1,4 +1,4 @@
-import { hiLo, RANKS, SUITS, type Card } from "../engine";
+import { hiLo, RANKS, SUITS, SHOE_DECK_COUNTS, type Card } from "../engine";
 import type { AppData } from "./types";
 import {
   CASINO_MAX_BET,
@@ -332,11 +332,21 @@ function session(value: unknown, path: string) {
         bool(entry[key], `${path}.insurance[${i}].${key}`);
     });
 }
-function shoe(value: unknown, path: string) {
+function shoe(value: unknown, path: string, casinoShoe = false) {
   const data = object(value, path);
   rules(data.rules, `${path}.rules`);
-  const deck = cards(data.cards, `${path}.cards`, 312, 312);
-  completeDeck(deck, 6, `${path}.cards`);
+  const deck = cards(
+    data.cards,
+    `${path}.cards`,
+    casinoShoe ? 52 : 312,
+    casinoShoe ? 416 : 312,
+  );
+  const deckCount = deck.length / 52;
+  check(
+    !casinoShoe || (SHOE_DECK_COUNTS as readonly number[]).includes(deckCount),
+    `${path}.cards has an unsupported shoe size`,
+  );
+  completeDeck(deck, deckCount, `${path}.cards`);
   const nextCard = number(
     data.nextCard,
     `${path}.nextCard`,
@@ -670,7 +680,7 @@ function casino(value: unknown, path: string) {
     data.deposits === (refills + 1) * CASINO_REFILL,
     `${path}.deposits does not match virtual refills`,
   );
-  shoe(data.shoe, `${path}.shoe`);
+  shoe(data.shoe, `${path}.shoe`, true);
   const bankroll = number(
     (data.shoe as ObjectValue).bankroll,
     `${path}.shoe.bankroll`,
