@@ -238,6 +238,14 @@ export default function Home() {
       <View style={[shared.row, { alignItems: "stretch" }]}>
         {[
           {
+            icon: "cash-outline" as const,
+            title: "Casino table",
+            description:
+              "Bet virtual money and play complete rounds. No quizzes, just blackjack.",
+            tag: "TAKE A SEAT",
+            action: () => go("casino"),
+          },
+          {
             icon: "layers-outline" as const,
             title: "Basic strategy",
             description:

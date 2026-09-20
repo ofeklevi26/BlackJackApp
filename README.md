@@ -26,9 +26,11 @@ If your Node installation does not include Corepack, install pnpm using its offi
 - Mixed, focused, adaptive, custom, and count-deviation scenarios, with balanced or realistic initial-deal sampling.
 - Custom hands are one-decision exercises; similar-hand practice starts a fresh focused session.
 - Coach feedback after each choice and Challenge feedback in the session review.
+- Compact practice tables with pinned answers and Next controls. Open optional explanation sheets for hand math, dealer context, alternative actions, rule effects, and count-deviation boundaries.
 - Six counting drills: card values, running count, pair cancellation, full-deck countdown, deck estimation, and true-count conversion.
 - A finite six-deck table with persistent shoes, insurance, splitting, doubling, surrender, dealer peek, and virtual-unit accounting.
 - Configurable completed-round count checkpoints, with exposed-card corrections in Coach mode.
+- A separate casino mode: start with $1,000 in virtual chips, place $5–$100 wagers, and play complete rounds without quizzes, count prompts, or grading. Includes insurance, splits, doubles, surrender, repeat bets, and saved shoes/rounds.
 - Session restarts preserve recorded rules and training conditions, including checkpoint cadence.
 - Session reviews, bookmarks, first-attempt and assistance-separated accuracy, response time, counting error, category trends, and history export.
 - Local persistence, pause/resume, optional haptics/card sound, reduced motion, and accessible labeled controls.
@@ -41,7 +43,9 @@ Basic strategy is total-dependent with pair priority and legal-action fallbacks.
 
 Hi-Lo uses +1 for 2–6, 0 for 7–9, and −1 for tens and aces. True count uses floor toward negative infinity (`-1 / 2` becomes `-1`). The shoe engine uses exact undealt decks internally. Completed-round estimation checkpoints use decks remaining rounded to the nearest half deck and ask for conversion using that estimate. Recognition and pair drills grade card values independently; running drills grade the cumulative count.
 
-Only revealed cards contribute to the count. This training table reveals the dealer hole card at every round end, including when all player hands bust or surrender, so its exposure history is always inspectable. Winnings are net virtual units and do not determine learning accuracy. Virtual balance starts at 100 and may go negative for uninterrupted practice.
+Only revealed cards contribute to the count. The table reveals the dealer hole card at every round end, including when all player hands bust or surrender, so its exposure history is always inspectable. Winnings are net virtual units and do not determine learning accuracy. The full-shoe **training** balance starts at 100 and may go negative for uninterrupted practice.
+
+**Casino mode** has an independent $1,000 virtual wallet. All wagers, including splits, doubles, and insurance, must be covered by available chips; active wagers remain reserved until the round settles. If the balance drops below the $5 table minimum, an explicit free $1,000 refill becomes available between rounds. There are no purchases, cash prizes, or cash-out. Casino rounds do not affect training statistics. Enter from Home or Practice, and use Exit to return to your paused training. The wallet, shoe, and current hand are saved on this device; table rules are fixed when the casino table is created.
 
 References, checked September 20, 2026:
 
@@ -60,7 +64,7 @@ pnpm test
 pnpm export:web
 ```
 
-Tests cover independent strategy reference cases, soft aces, legal actions, split aces, insurance/peek timing, payouts, stale submissions, seeded scenarios, long-run shoe invariants, counting checkpoints, pause/time accounting, and learning metrics. GitHub Actions runs type checking, tests, and a production web export on every main-branch push and pull request.
+Tests cover independent strategy reference cases, expanded explanations, soft aces, legal actions, split aces, insurance/peek timing, payouts, stale submissions, seeded scenarios, long-run shoe invariants, counting checkpoints, pause/time accounting, learning metrics, and casino wallet/persistence invariants. GitHub Actions runs type checking, tests, and a production web export on every main-branch push and pull request.
 
 ```text
 app/                  Expo Router tabs and practice orchestration
@@ -92,4 +96,4 @@ The preview Android profile produces an APK. iOS internal distribution requires 
 
 ## Verification notes
 
-The latest [QA report](docs/QA-REPORT.md) records 88 passing tests, independent strategy/counting checks, actual learner walkthroughs, confirmed fixes, and remaining device checks. [Verification notes](docs/VERIFICATION.md) also retain the original build baseline. Native device rendering and signed EAS builds require a physical device/emulator and your Expo/Apple/Google accounts; bundle exports are not evidence of a signed native build.
+The latest [practice and casino verification](docs/PRACTICE-CASINO-VERIFICATION.md) covers 110 passing tests, compact phone layouts, expanded explanations, virtual-wallet accounting, and saved casino rounds. The earlier [QA report](docs/QA-REPORT.md) records the full strategy/counting audit and learner walkthroughs. [Verification notes](docs/VERIFICATION.md) retain both milestones and the original build baseline. Native device rendering and signed EAS builds require a physical device/emulator and your Expo/Apple/Google accounts; bundle exports are not evidence of a signed native build.

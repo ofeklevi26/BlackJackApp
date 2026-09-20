@@ -5,8 +5,9 @@ import {
   TextInput,
   Switch,
   StyleSheet,
-  Linking,
   Animated,
+  Keyboard,
+  useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, usePathname, router } from "expo-router";
 import { useAudioPlayer } from "expo-audio";
@@ -38,14 +39,13 @@ import {
   trueCount,
   hiLo,
   insuranceRecommendation,
-  COUNT_SOURCE,
-  STRATEGY_SOURCE,
   type Rank,
   type Action,
   type Scenario,
 } from "../src/engine";
 import {
   Page,
+  DetailSheet,
   Panel,
   Title,
   Heading,
@@ -54,7 +54,6 @@ import {
   Button,
   Chip,
   PlayingCard,
-  Stat,
   colors,
   shared,
 } from "../src/ui";
@@ -63,15 +62,21 @@ import CountingTrainer from "../src/screens/CountingTrainer";
 import { createCountingSetup } from "../src/counting";
 import { setBookmark } from "../src/content/progress";
 import SessionReview from "../src/screens/SessionReview";
+import StrategyTable from "../src/screens/StrategyTable";
+import CasinoScreen from "../src/screens/CasinoScreen";
+import DecisionExplanation from "../src/screens/DecisionExplanation";
 
-const ACTIONS: Action[] = ["hit", "stand", "double", "split", "surrender"];
 const label = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 const signed = (n: number) => `${n > 0 ? "+" : ""}${Number(n.toFixed(2))}`;
 export default function Practice() {
   const { data, update } = useStore();
+  const { height, width, fontScale } = useWindowDimensions();
+  const shortTable = height < 740 && fontScale < 1.3;
+  const checkpointRow = width >= 350 && fontScale < 1.3;
   const params = useLocalSearchParams<{ topic?: string }>();
   const path = usePathname();
   const [topic, setTopic] = useState(params.topic || "mixed");
+  const [casinoOpen, setCasinoOpen] = useState(params.topic === "casino");
   const [target, setTarget] = useState(20);
   const [minutes, setMinutes] = useState(0);
   const [sampling, setSampling] = useState<"balanced" | "realistic">(
@@ -96,9 +101,12 @@ export default function Practice() {
   const sound = useAudioPlayer(require("../assets/card.wav"));
   const fade = useRef(new Animated.Value(1)).current;
   useEffect(() => {
+    if (path !== "/practice") return;
     if (params.topic) {
       setTopic(params.topic);
       setSummary(null);
+      if (params.topic === "casino") openCasino();
+      else setCasinoOpen(false);
       if (
         ["count", "true-count"].includes(params.topic) &&
         !data.active &&
@@ -131,7 +139,13 @@ export default function Practice() {
     }
   }, [scenarioKey, active?.feedback?.id, active?.paused]);
   useEffect(() => {
-    if (!active || active.paused || active.feedback || path !== "/practice")
+    if (
+      !active ||
+      active.paused ||
+      active.feedback ||
+      casinoOpen ||
+      path !== "/practice"
+    )
       return;
     lastTick.current = Date.now();
     const id = active.session.id;
@@ -149,7 +163,13 @@ export default function Practice() {
       );
     }, 1000);
     return () => clearInterval(timer);
-  }, [active?.session.id, active?.paused, active?.feedback?.id, path]);
+  }, [
+    active?.session.id,
+    active?.paused,
+    active?.feedback?.id,
+    path,
+    casinoOpen,
+  ]);
   useEffect(() => {
     if (path !== "/practice" && active && !active.paused)
       update((d) =>
@@ -184,6 +204,33 @@ export default function Practice() {
         ? d.sessions
         : [...d.sessions.filter((s) => s.id !== result.id), result],
     }));
+  }
+  function openCasino() {
+    setCasinoOpen(true);
+    setSummary(null);
+    if (params.topic !== "casino") router.setParams({ topic: "casino" });
+    update((d) => ({
+      ...d,
+      active: d.active ? { ...d.active, paused: true } : null,
+      counting: d.counting ? { ...d.counting, paused: true } : null,
+    }));
+  }
+  function practiceSimilar() {
+    if (!active?.feedback) return;
+    const result = completedSession(active);
+    const newTopic = active.feedback.category;
+    setNotice("");
+    update((d) =>
+      d.active?.session.id !== active.session.id
+        ? d
+        : {
+            ...d,
+            sessions: active.reviewOnly
+              ? d.sessions
+              : [...d.sessions.filter((s) => s.id !== result.id), result],
+            active: trainingFromSession(d, active.session, { topic: newTopic }),
+          },
+    );
   }
   const due =
     !!active &&
@@ -382,6 +429,16 @@ export default function Practice() {
   }
   if (path !== "/practice")
     return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (casinoOpen)
+    return (
+      <CasinoScreen
+        onExit={() => {
+          setCasinoOpen(false);
+          setTopic("mixed");
+          router.setParams({ topic: "mixed" });
+        }}
+      />
+    );
   if (summary && !active && !data.counting)
     return (
       <SessionReview
@@ -478,6 +535,25 @@ export default function Practice() {
           </Body>
         </View>
         <View style={[shared.row, { alignItems: "stretch" }]}>
+          <Panel
+            style={{
+              flex: 1,
+              minWidth: 250,
+              borderColor: "#7B6B44",
+              backgroundColor: "#192C2B",
+            }}
+          >
+            <Eyebrow>JUST PLAY</Eyebrow>
+            <Heading>Casino table</Heading>
+            <Body>
+              Place your bet and play full blackjack rounds with a saved virtual
+              bankroll. No quizzes or count checkpoints.
+            </Body>
+            <Button
+              label={data.casino ? "Return to casino" : "Play casino blackjack"}
+              onPress={openCasino}
+            />
+          </Panel>
           {[
             [
               "mixed",
@@ -776,502 +852,645 @@ export default function Practice() {
     !!active.checkpointEvery &&
     shoe.rounds % (active.checkpointEvery || 1) === 0 &&
     active.checkpointRound !== shoe.rounds;
-  return (
-    <Page key={active.session.id}>
-      <View style={shared.between}>
-        <View style={{ gap: 7 }}>
-          <Eyebrow>
-            {shoe
-              ? "THE PRACTICE TABLE"
-              : active.reviewOnly
-                ? "REVIEW · DOES NOT CHANGE MASTERY"
-                : "ONE DECISION AT A TIME"}
-          </Eyebrow>
-          <Heading>
-            {shoe
-              ? "Settle in. Find your rhythm."
-              : active.session.topic === "deviations"
-                ? "Read the count. Choose your move."
-                : "What’s your move?"}
-          </Heading>
-        </View>
-        <View style={shared.row}>
-          <Chip
-            label={
-              active.timeLimitMs
-                ? `${Math.floor(active.elapsedMs / 60000)}:${String(Math.floor(active.elapsedMs / 1000) % 60).padStart(2, "0")} / ${active.timeLimitMs / 60000} min`
-                : `${shoe ? shoe.rounds : active.session.decisions.length} / ${active.target} ${shoe ? "rounds" : "decisions"}`
-            }
+  if (!shoe)
+    return (
+      <StrategyTable
+        training={active}
+        scenario={current ?? undefined}
+        due={due}
+        notice={notice}
+        reducedMotion={data.settings.reducedMotion}
+        onChoose={choose}
+        onNext={next}
+        onPause={() => change((a) => ({ ...a, paused: true }))}
+        onResume={() => change((a) => ({ ...a, paused: false }))}
+        onFinish={finish}
+        onSave={() => feedback && save(feedback.scenario)}
+        onSimilar={practiceSimilar}
+        onCasino={openCasino}
+      />
+    );
+  const betweenRounds = !round || round.phase === "complete";
+  const footer = active.paused ? (
+    <Button
+      label="Resume training"
+      onPress={() => change((a) => ({ ...a, paused: false }))}
+    />
+  ) : feedback ? (
+    <View style={{ gap: 6 }}>
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[
+          s.small,
+          {
+            color:
+              active.session.feedback === "challenge"
+                ? colors.muted
+                : feedback.correct
+                  ? colors.green
+                  : colors.gold,
+          },
+        ]}
+      >
+        {active.session.feedback === "challenge"
+          ? `${label(feedback.chosen)} recorded · review after the session`
+          : feedback.correct
+            ? `✓ ${label(feedback.chosen)} is the right move`
+            : `${label(feedback.recommended)} is recommended · you chose ${label(feedback.chosen)}`}
+      </Text>
+      <View style={s.dockRow}>
+        <Button label="Continue hand" onPress={next} style={s.dockPrimary} />
+        {active.session.feedback === "coach" && (
+          <Button
+            label="Explain"
+            variant="secondary"
+            onPress={() => setMore(true)}
+            style={s.smallButton}
           />
+        )}
+        <Button
+          label="Save"
+          variant="ghost"
+          onPress={() => save(feedback.scenario)}
+          style={s.smallButton}
+        />
+      </View>
+    </View>
+  ) : round?.phase === "insurance" ? (
+    <View style={s.dockRow}>
+      <Button
+        label="Decline insurance"
+        onPress={() => insure(false)}
+        style={s.dockPrimary}
+      />
+      <Button
+        label="Take insurance"
+        variant="secondary"
+        onPress={() => insure(true)}
+        style={s.dockPrimary}
+      />
+    </View>
+  ) : betweenRounds ? (
+    checkpointNeeded ? (
+      <Button
+        label="Check my count"
+        onPress={() => {
+          Keyboard.dismiss();
+          checkpoint();
+        }}
+      />
+    ) : due ? (
+      <Button label="See my session results" onPress={finish} />
+    ) : (
+      <View style={{ gap: 8 }}>
+        <View style={s.dockRow}>
+          {[1, 2, 4, 8].map((n) => (
+            <Button
+              key={n}
+              label={`${n} units`}
+              variant={bet === n ? "primary" : "secondary"}
+              onPress={() => setBet(n)}
+              style={s.dockPrimary}
+            />
+          ))}
+        </View>
+        <Button
+          label={`Deal next round · ${bet} ${bet === 1 ? "unit" : "units"}`}
+          onPress={() => {
+            const expectedRounds = shoe.rounds;
+            change((a) =>
+              !a.shoe ||
+              a.paused ||
+              a.feedback ||
+              a.shoe.rounds !== expectedRounds ||
+              (a.shoe.round && a.shoe.round.phase !== "complete") ||
+              (a.shoe.round?.phase === "complete" &&
+                !!a.checkpointEvery &&
+                a.shoe.rounds % a.checkpointEvery === 0 &&
+                a.checkpointRound !== a.shoe.rounds)
+                ? a
+                : {
+                    ...a,
+                    shoe: startRound(a.shoe, bet, expectedRounds),
+                    thinkingMs: 0,
+                  },
+            );
+            setRunningInput("");
+            setDeckInput("");
+            setTrueInput("");
+            setNotice("");
+          }}
+        />
+      </View>
+    )
+  ) : shown && round?.phase === "playing" ? (
+    <View style={{ gap: 6 }}>
+      {[
+        ["hit", "stand"],
+        ["double", "split", "surrender"],
+      ].map((row, i) => (
+        <View style={s.dockRow} key={i}>
+          {(row as Action[]).map((action) => (
+            <Button
+              key={action}
+              label={label(action)}
+              variant={action === "hit" ? "primary" : "secondary"}
+              style={s.dockPrimary}
+              disabled={!legalActions(shown, displayRules).includes(action)}
+              onPress={() => choose(action)}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  ) : undefined;
+  return (
+    <>
+      <Page key={active.session.id} compact footer={footer}>
+        <View style={s.compactHeader}>
+          <View style={{ gap: 3, flex: 1, minWidth: 0 }}>
+            <Text accessibilityRole="header" style={s.compactTitle}>
+              Shoe training
+            </Text>
+            <Text style={s.small}>
+              {active.timeLimitMs
+                ? `${Math.floor(active.elapsedMs / 60000)}:${String(Math.floor(active.elapsedMs / 1000) % 60).padStart(2, "0")} / ${active.timeLimitMs / 60000} min`
+                : `${shoe.rounds} / ${active.target} rounds`}
+              {` · ${active.session.feedback === "coach" ? "Coach" : "Challenge"} · ${active.session.assisted ? "Guided" : "Independent"}`}
+            </Text>
+          </View>
           <Button
             label={active.paused ? "Resume" : "Pause"}
             variant="ghost"
+            style={s.smallButton}
             onPress={() => change((a) => ({ ...a, paused: !a.paused }))}
           />
-          <Button label="Finish session" variant="ghost" onPress={finish} />
-        </View>
-      </View>
-      <View style={shared.row}>
-        <Chip
-          label={`6 decks · ${displayRules.hitSoft17 ? "H17" : "S17"} · 3:2`}
-        />
-        <Chip
-          label={displayRules.surrender ? "Late surrender" : "No surrender"}
-        />
-        <Chip
-          label={active.session.feedback === "coach" ? "Coach" : "Challenge"}
-        />
-        <Chip label={active.session.assisted ? "Assisted" : "Unassisted"} />
-        {shoe && <Chip label={`Shoe ${shoe.shuffleNumber}`} />}
-      </View>
-      {active.paused ? (
-        <Panel>
-          <Heading>Your place is saved.</Heading>
-          <Body>
-            The timer and shoe are paused. Come back whenever you’re ready.
-          </Body>
           <Button
-            label="Resume training"
-            onPress={() => change((a) => ({ ...a, paused: false }))}
+            label="Details"
+            variant="ghost"
+            style={s.smallButton}
+            onPress={() => {
+              change((a) => ({ ...a, paused: true }));
+              setMore(true);
+            }}
           />
-        </Panel>
-      ) : (
-        <>
-          {shoe && (!round || round.phase === "complete") && !feedback && (
-            <Panel>
-              <View style={shared.row}>
-                <Stat
-                  label="Virtual balance"
-                  value={shoe.bankroll.toFixed(1)}
-                />
-                <Stat label="Net units" value={signed(shoe.bankroll - 100)} />
-                <Stat label="Completed rounds" value={String(shoe.rounds)} />
-              </View>
-              {round && (
-                <>
-                  <Heading>
-                    Round complete · {signed(round.profit)} units
-                  </Heading>
-                  <View style={shared.row}>
-                    {round.dealer.map((c) => (
-                      <PlayingCard key={c.id} card={c} small />
-                    ))}
-                    <Body>Dealer {handValue(round.dealer).total}</Body>
-                  </View>
-                  {round.hands.map((h, i) => (
-                    <View key={h.id} style={shared.row}>
-                      <Body>
-                        Hand {i + 1} · {h.result} · {signed(h.profit || 0)}
-                      </Body>
-                      {h.cards.map((c) => (
+        </View>
+        {active.paused ? (
+          <Panel style={s.compactPanel}>
+            <Heading>Your place is saved.</Heading>
+            <Body>
+              The timer and shoe are paused. Come back whenever you’re ready.
+            </Body>
+            <Button
+              label={betweenRounds ? "Finish session" : "End after this round"}
+              variant="secondary"
+              onPress={finish}
+            />
+            {!!notice && <Body style={{ color: colors.gold }}>{notice}</Body>}
+          </Panel>
+        ) : (
+          <>
+            {shoe && (!round || round.phase === "complete") && !feedback && (
+              <Panel
+                style={[
+                  s.compactPanel,
+                  shortTable && checkpointNeeded
+                    ? { gap: 6, padding: 10 }
+                    : undefined,
+                ]}
+              >
+                <Text style={s.small}>
+                  Virtual balance {shoe.bankroll.toFixed(1)} · net{" "}
+                  {signed(shoe.bankroll - 100)} units
+                </Text>
+                {round && (
+                  <>
+                    <Text style={s.compactTitle}>
+                      Round complete · {signed(round.profit)} units
+                    </Text>
+                    <View style={s.cardRow}>
+                      {round.dealer.map((c) => (
                         <PlayingCard key={c.id} card={c} small />
                       ))}
+                      <Text style={s.small}>
+                        Dealer {handValue(round.dealer).total}
+                      </Text>
                     </View>
-                  ))}
-                  {round.insuranceBet > 0 && (
-                    <Body>
-                      Insurance: {signed(round.insuranceProfit)} units
-                    </Body>
-                  )}
-                </>
-              )}
-              {checkpointNeeded ? (
-                <>
-                  <Heading>Check your count</Heading>
-                  <Body>
-                    Before seeing the answer, enter your running count, decks
-                    remaining to the nearest half deck, and the true count using
-                    that estimate.
-                  </Body>
-                  <TextInput
-                    accessibilityLabel="Running count checkpoint"
-                    placeholder="Running count"
-                    placeholderTextColor={colors.muted}
-                    style={shared.input}
-                    value={runningInput}
-                    onChangeText={setRunningInput}
-                    keyboardType="numbers-and-punctuation"
-                  />
-                  <TextInput
-                    accessibilityLabel="Decks remaining checkpoint"
-                    placeholder="Decks remaining"
-                    placeholderTextColor={colors.muted}
-                    style={shared.input}
-                    value={deckInput}
-                    onChangeText={setDeckInput}
-                    keyboardType="decimal-pad"
-                  />
-                  <TextInput
-                    accessibilityLabel="True count checkpoint"
-                    placeholder="True count · rounded down"
-                    placeholderTextColor={colors.muted}
-                    style={shared.input}
-                    value={trueInput}
-                    onChangeText={setTrueInput}
-                    keyboardType="numbers-and-punctuation"
-                  />
-                  {!!checkError && (
-                    <Body style={{ color: colors.red }}>{checkError}</Body>
-                  )}
-                  <Button label="Check my count" onPress={checkpoint} />
-                </>
-              ) : (
-                <>
-                  {shoe.rounds > 0 &&
-                    active.checkpointRound === shoe.rounds && (
-                      <Body>
-                        {active.session.feedback === "coach"
-                          ? `Running count ${signed(shoe.runningCount)} · about ${Math.max(0.5, Math.round(decksRemaining(shoe) * 2) / 2)} decks · true count ${signed(trueCount(shoe.runningCount, Math.max(0.5, Math.round(decksRemaining(shoe) * 2) / 2)))}`
-                          : "Count checkpoint recorded. Answers appear in your session review."}
-                      </Body>
+                    {round.hands.map((h, i) =>
+                      shortTable && checkpointNeeded ? (
+                        <Text key={h.id} style={s.small}>
+                          Hand {i + 1}:{" "}
+                          {h.cards
+                            .map((card) => `${card.rank}${card.suit}`)
+                            .join("  ")}{" "}
+                          · {h.result} · {signed(h.profit || 0)}
+                        </Text>
+                      ) : (
+                        <View key={h.id} style={s.cardRow}>
+                          <Text style={s.small}>
+                            Hand {i + 1} · {h.result} · {signed(h.profit || 0)}
+                          </Text>
+                          {h.cards.map((c) => (
+                            <PlayingCard key={c.id} card={c} small />
+                          ))}
+                        </View>
+                      ),
                     )}
-                  {due ? (
-                    <Button label="See my session results" onPress={finish} />
-                  ) : (
-                    <>
+                    {round.insuranceBet > 0 && (
                       <Body>
-                        Choose your virtual wager before the next cards are
-                        dealt.
-                      </Body>
-                      <View style={shared.row}>
-                        {[1, 2, 4, 8].map((n) => (
-                          <Chip
-                            key={n}
-                            label={`${n} units`}
-                            selected={bet === n}
-                            onPress={() => setBet(n)}
-                          />
-                        ))}
-                      </View>
-                      <Button
-                        label="Deal next round"
-                        onPress={() => {
-                          change((a) => ({
-                            ...a,
-                            shoe: startRound(a.shoe!, bet, a.shoe!.rounds),
-                            thinkingMs: 0,
-                          }));
-                          setRunningInput("");
-                          setDeckInput("");
-                          setTrueInput("");
-                          setNotice("");
-                        }}
-                      />
-                    </>
-                  )}
-                </>
-              )}
-            </Panel>
-          )}
-          {shoe && round?.phase === "insurance" && (
-            <Panel>
-              <Heading>Dealer shows an ace</Heading>
-              <View style={shared.row}>
-                <PlayingCard card={round.dealer[0]} />
-                <PlayingCard hidden />
-              </View>
-              <Eyebrow>YOUR EXPOSED CARDS</Eyebrow>
-              <View style={shared.row}>
-                {round.hands[0].cards.map((card) => (
-                  <PlayingCard key={card.id} card={card} />
-                ))}
-              </View>
-              <Body>
-                Insurance is a separate half-bet wager that pays 2:1 when the
-                dealer has blackjack.
-              </Body>
-              <View style={shared.row}>
-                <Button
-                  label="Decline insurance"
-                  onPress={() => insure(false)}
-                />
-                <Button
-                  label="Take insurance"
-                  variant="secondary"
-                  onPress={() => insure(true)}
-                />
-              </View>
-            </Panel>
-          )}
-          {shown && (
-            <Animated.View style={{ opacity: fade }}>
-              <View style={s.table}>
-                <View style={s.tableLine} />
-                <Eyebrow>DEALER</Eyebrow>
-                <View style={shared.row}>
-                  <PlayingCard card={shown.dealer} />
-                  <PlayingCard hidden />
-                </View>
-                <Text style={s.tableMark}>BLACKJACK PAYS 3 TO 2</Text>
-                <View style={s.handArea}>
-                  <View style={shared.row}>
-                    {shown.cards.map((c) => (
-                      <PlayingCard key={c.id} card={c} />
-                    ))}
-                  </View>
-                  <View style={shared.row}>
-                    <Eyebrow>
-                      {shown.fromSplit ? "YOUR SPLIT HAND" : "YOUR HAND"}
-                    </Eyebrow>
-                    {active.session.assisted && (
-                      <Chip
-                        label={`${handValue(shown.cards).total} · ${handValue(shown.cards).soft ? "soft" : "hard"}`}
-                      />
-                    )}
-                  </View>
-                  {active.countMode && (
-                    <Chip
-                      label={`Supplied true count: ${signed(shown.trueCount || 0)}`}
-                    />
-                  )}
-                </View>
-                <View style={s.actions}>
-                  {ACTIONS.map((action) => (
-                    <Button
-                      key={action}
-                      label={label(action)}
-                      variant={action === "hit" ? "primary" : "secondary"}
-                      style={{ flexGrow: 1, minWidth: 82 }}
-                      disabled={
-                        !!feedback ||
-                        !legalActions(shown, displayRules).includes(action)
-                      }
-                      onPress={() => choose(action)}
-                    />
-                  ))}
-                </View>
-                <Body style={{ fontSize: 12, textAlign: "center" }}>
-                  {shown.fromSplit ? "After a split · " : " "}
-                  {shown.cards.length > 2
-                    ? "Double and surrender require the initial two cards."
-                    : `Double adds an equal bet · ${actionRestriction("split", shown, displayRules) || "Split is available"}`}
-                </Body>
-                {!feedback && active.session.assisted && (
-                  <Body style={{ color: colors.green }}>
-                    Hint:{" "}
-                    {label(
-                      recommend(shown, displayRules, active.countMode).action,
-                    )}
-                    . {recommend(shown, displayRules, active.countMode).reason}
-                  </Body>
-                )}
-              </View>
-            </Animated.View>
-          )}
-          {shoe &&
-            !feedback &&
-            round?.phase === "playing" &&
-            round.hands.length > 1 && (
-              <Panel>
-                <Heading>Your other split hands</Heading>
-                <Body>
-                  Keep every exposed card in your count, including cards drawn
-                  to a finished hand.
-                </Body>
-                {round.hands.map((hand, index) =>
-                  index === round.activeHand ? null : (
-                    <View key={hand.id} style={{ gap: 8 }}>
-                      <Eyebrow>
-                        Hand {index + 1} ·{" "}
-                        {index < round.activeHand
-                          ? "finished playing"
-                          : "waiting to play"}
-                      </Eyebrow>
-                      <View style={shared.row}>
-                        {hand.cards.map((card) => (
-                          <PlayingCard key={card.id} card={card} small />
-                        ))}
-                      </View>
-                    </View>
-                  ),
-                )}
-              </Panel>
-            )}
-          {feedback && (
-            <Panel
-              style={{
-                borderColor:
-                  active.session.feedback === "challenge"
-                    ? colors.border
-                    : feedback.correct
-                      ? "#43846C"
-                      : "#8E665A",
-              }}
-            >
-              <Eyebrow>
-                {active.session.feedback === "challenge"
-                  ? "ANSWER RECORDED"
-                  : feedback.correct
-                    ? "✓ GOOD DECISION"
-                    : "A MOMENT TO LEARN"}
-              </Eyebrow>
-              <Heading>
-                {active.session.feedback === "challenge"
-                  ? `You chose ${label(feedback.chosen)}.`
-                  : feedback.correct
-                    ? `${label(feedback.chosen)} is the right move.`
-                    : `You chose ${label(feedback.chosen)}. ${label(feedback.recommended)} is recommended.`}
-              </Heading>
-              {active.session.feedback === "coach" && (
-                <>
-                  <Body>{feedback.explanation}</Body>
-                  <Body style={{ fontSize: 12 }}>
-                    The quality of a decision is independent of the next card.
-                  </Body>
-                  <Button
-                    label={more ? "Less detail" : "Explain more"}
-                    variant="ghost"
-                    onPress={() => setMore((x) => !x)}
-                  />
-                  {more && (
-                    <>
-                      <Body>
-                        {recommend(
-                          feedback.scenario,
-                          displayRules,
-                          active.countMode,
-                        ).reason ||
-                          `Chart lookup: ${category(feedback.scenario)} ${handValue(feedback.scenario.cards).total} against ${feedback.scenario.dealer.rank}.`}{" "}
-                        Only cards visible when you chose are used for this
-                        recommendation.
-                      </Body>
-                      {ACTIONS.filter((a) =>
-                        actionRestriction(a, feedback.scenario, displayRules),
-                      ).map((a) => (
-                        <Body key={a} style={{ fontSize: 12 }}>
-                          {label(a)}:{" "}
-                          {actionRestriction(
-                            a,
-                            feedback.scenario,
-                            displayRules,
-                          )}
-                        </Body>
-                      ))}
-                      <Button
-                        label="View strategy reference"
-                        variant="ghost"
-                        onPress={() =>
-                          void Linking.openURL(
-                            active.countMode ? COUNT_SOURCE : STRATEGY_SOURCE,
-                          )
-                        }
-                      />
-                    </>
-                  )}
-                </>
-              )}
-              <View style={shared.row}>
-                <Button
-                  label={
-                    due && !shoe
-                      ? "See results"
-                      : shoe
-                        ? "Continue hand"
-                        : "Next situation  →"
-                  }
-                  onPress={next}
-                />
-                <Button
-                  label="Save for review"
-                  variant="secondary"
-                  onPress={() => save(feedback.scenario)}
-                />
-                {!shoe && active.session.feedback === "coach" && (
-                  <Button
-                    label="Practice similar hands"
-                    variant="ghost"
-                    onPress={() => {
-                      const result = completedSession(active);
-                      setNotice("");
-                      update((d) =>
-                        d.active?.session.id !== active.session.id
-                          ? d
-                          : {
-                              ...d,
-                              sessions: active.reviewOnly
-                                ? d.sessions
-                                : [
-                                    ...d.sessions.filter(
-                                      (s) => s.id !== result.id,
-                                    ),
-                                    result,
-                                  ],
-                              active: trainingFromSession(d, active.session, {
-                                topic: feedback.category,
-                              }),
-                            },
-                      );
-                    }}
-                  />
-                )}
-              </View>
-            </Panel>
-          )}
-          {shoe && !feedback && (
-            <Panel>
-              <View style={shared.between}>
-                <Body>Discard tray · shoe penetration</Body>
-                <Body>{Math.round((shoe.nextCard / 312) * 100)}%</Body>
-              </View>
-              <View
-                accessibilityLabel={`${Math.round((shoe.nextCard / 312) * 100)} percent of shoe dealt`}
-                style={s.track}
-              >
-                <View
-                  style={{
-                    height: 8,
-                    borderRadius: 4,
-                    width: `${(shoe.nextCard / 312) * 100}%`,
-                    backgroundColor: colors.green,
-                  }}
-                />
-              </View>
-              {active.session.assisted && !checkpointNeeded && (
-                <Body>
-                  Visible-card running count {signed(shoe.runningCount)}
-                </Body>
-              )}
-              {round?.phase === "complete" &&
-                active.checkpointRound === shoe.rounds &&
-                active.session.feedback === "coach" && (
-                  <>
-                    <Button
-                      label={
-                        more
-                          ? "Hide count walkthrough"
-                          : "Show count walkthrough"
-                      }
-                      variant="ghost"
-                      onPress={() => setMore((x) => !x)}
-                    />
-                    {more && (
-                      <Body>
-                        {visibleCards(shoe)
-                          .map(
-                            (c, i, arr) =>
-                              `${c.rank}${c.suit} (${signed(hiLo(c))}) → ${signed(arr.slice(0, i + 1).reduce((n, x) => n + hiLo(x), 0))}`,
-                          )
-                          .join("   ·   ")}
+                        Insurance: {signed(round.insuranceProfit)} units
                       </Body>
                     )}
                   </>
                 )}
-            </Panel>
-          )}
-          {!!notice && <Body style={{ color: colors.green }}>{notice}</Body>}
-        </>
-      )}
-    </Page>
+                {checkpointNeeded ? (
+                  <>
+                    <View style={shared.between}>
+                      <Text style={s.compactTitle}>Check your count</Text>
+                      <Button
+                        label="Done"
+                        variant="ghost"
+                        style={s.smallButton}
+                        onPress={() => Keyboard.dismiss()}
+                      />
+                    </View>
+                    <Text style={s.small}>
+                      Estimate decks to the nearest ½, then use that estimate
+                      for your true count.
+                    </Text>
+                    <View style={checkpointRow ? s.checkpointRow : { gap: 8 }}>
+                      <View
+                        style={checkpointRow ? s.checkpointField : { gap: 3 }}
+                      >
+                        <Text style={s.small}>Running</Text>
+                        <TextInput
+                          accessibilityLabel="Running count checkpoint"
+                          placeholder="0"
+                          placeholderTextColor={colors.muted}
+                          style={[shared.input, s.checkpointInput]}
+                          value={runningInput}
+                          onChangeText={setRunningInput}
+                          keyboardType="numbers-and-punctuation"
+                          returnKeyType="done"
+                          onSubmitEditing={() => Keyboard.dismiss()}
+                        />
+                      </View>
+                      <View
+                        style={checkpointRow ? s.checkpointField : { gap: 3 }}
+                      >
+                        <Text style={s.small}>Decks</Text>
+                        <TextInput
+                          accessibilityLabel="Decks remaining checkpoint"
+                          placeholder="0.5–6"
+                          placeholderTextColor={colors.muted}
+                          style={[shared.input, s.checkpointInput]}
+                          value={deckInput}
+                          onChangeText={setDeckInput}
+                          keyboardType="decimal-pad"
+                          returnKeyType="done"
+                          onSubmitEditing={() => Keyboard.dismiss()}
+                        />
+                      </View>
+                      <View
+                        style={checkpointRow ? s.checkpointField : { gap: 3 }}
+                      >
+                        <Text style={s.small}>True</Text>
+                        <TextInput
+                          accessibilityLabel="True count checkpoint"
+                          placeholder="0"
+                          placeholderTextColor={colors.muted}
+                          style={[shared.input, s.checkpointInput]}
+                          value={trueInput}
+                          onChangeText={setTrueInput}
+                          keyboardType="numbers-and-punctuation"
+                          returnKeyType="done"
+                          onSubmitEditing={() => Keyboard.dismiss()}
+                        />
+                      </View>
+                    </View>
+                    {!!checkError && (
+                      <Body style={{ color: colors.red }}>{checkError}</Body>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {shoe.rounds > 0 &&
+                      active.checkpointRound === shoe.rounds && (
+                        <Body>
+                          {active.session.feedback === "coach"
+                            ? `Running count ${signed(shoe.runningCount)} · about ${Math.max(0.5, Math.round(decksRemaining(shoe) * 2) / 2)} decks · true count ${signed(trueCount(shoe.runningCount, Math.max(0.5, Math.round(decksRemaining(shoe) * 2) / 2)))}`
+                            : "Count checkpoint recorded. Answers appear in your session review."}
+                        </Body>
+                      )}
+                    {!due && (
+                      <Text style={s.small}>
+                        Choose your virtual wager below, then deal.
+                      </Text>
+                    )}
+                  </>
+                )}
+              </Panel>
+            )}
+            {shoe && round?.phase === "insurance" && (
+              <Panel style={s.compactPanel}>
+                <Text style={s.compactTitle}>Dealer shows an ace</Text>
+                <View style={s.cardRow}>
+                  <PlayingCard card={round.dealer[0]} small />
+                  <PlayingCard hidden small />
+                </View>
+                <Eyebrow>YOUR EXPOSED CARDS</Eyebrow>
+                <View style={s.cardRow}>
+                  {round.hands[0].cards.map((card) => (
+                    <PlayingCard key={card.id} card={card} small />
+                  ))}
+                </View>
+                <Text style={s.small}>
+                  Insurance is a separate half-bet wager that pays 2:1 when the
+                  dealer has blackjack.
+                </Text>
+              </Panel>
+            )}
+            {shown && (
+              <Animated.View style={{ opacity: fade }}>
+                <View style={s.table}>
+                  <View style={s.tableLine} />
+                  <View style={[s.tableHands, shortTable && s.tableHandsRow]}>
+                    <View style={[s.handArea, shortTable && s.handColumn]}>
+                      <Eyebrow>DEALER</Eyebrow>
+                      <View style={s.cardRow}>
+                        <PlayingCard card={shown.dealer} small />
+                        <PlayingCard hidden small />
+                      </View>
+                    </View>
+                    {!shortTable && (
+                      <Text style={s.tableMark}>BLACKJACK PAYS 3 TO 2</Text>
+                    )}
+                    <View style={[s.handArea, shortTable && s.handColumn]}>
+                      <Eyebrow>
+                        {shown.fromSplit ? "SPLIT HAND" : "YOUR HAND"}
+                      </Eyebrow>
+                      <View style={s.cardRow}>
+                        {shown.cards.map((c) => (
+                          <PlayingCard key={c.id} card={c} small />
+                        ))}
+                      </View>
+                      <View style={shared.row}>
+                        {active.session.assisted && (
+                          <Text
+                            style={[s.small, { color: colors.green }]}
+                          >{`${handValue(shown.cards).total} · ${handValue(shown.cards).soft ? "soft" : "hard"}`}</Text>
+                        )}
+                      </View>
+                      {active.countMode && (
+                        <Chip
+                          label={`Supplied true count: ${signed(shown.trueCount || 0)}`}
+                        />
+                      )}
+                    </View>
+                  </View>
+                  {!feedback && active.session.assisted && (
+                    <Text
+                      style={[
+                        s.small,
+                        { color: colors.green, textAlign: "center" },
+                      ]}
+                    >
+                      Hint:{" "}
+                      {label(
+                        recommend(shown, displayRules, active.countMode).action,
+                      )}
+                      .{" "}
+                      {recommend(shown, displayRules, active.countMode).reason}
+                    </Text>
+                  )}
+                </View>
+              </Animated.View>
+            )}
+            {shoe &&
+              !feedback &&
+              round?.phase === "playing" &&
+              round.hands.length > 1 && (
+                <Panel style={s.compactPanel}>
+                  <Text style={s.small}>
+                    Other split hands · count every exposed card
+                  </Text>
+                  {round.hands.map((hand, index) =>
+                    index === round.activeHand ? null : (
+                      <View key={hand.id} style={{ gap: 8 }}>
+                        <Eyebrow>
+                          Hand {index + 1} ·{" "}
+                          {index < round.activeHand
+                            ? "finished playing"
+                            : "waiting to play"}
+                        </Eyebrow>
+                        <View style={s.cardRow}>
+                          {hand.cards.map((card) => (
+                            <PlayingCard key={card.id} card={card} small />
+                          ))}
+                        </View>
+                      </View>
+                    ),
+                  )}
+                </Panel>
+              )}
+            {feedback && (
+              <Text style={s.small}>
+                {active.session.feedback === "coach"
+                  ? feedback.explanation
+                  : "Your first answer is saved. Feedback appears in the session review."}
+              </Text>
+            )}
+            {shoe && !feedback && !checkpointNeeded && (
+              <View style={{ gap: 5 }}>
+                <View style={shared.between}>
+                  <Text style={s.small}>
+                    Shoe {shoe.shuffleNumber} ·{" "}
+                    {Math.round((shoe.nextCard / 312) * 100)}% dealt
+                  </Text>
+                  {active.session.assisted && !checkpointNeeded && (
+                    <Text style={[s.small, { color: colors.green }]}>
+                      Visible count {signed(shoe.runningCount)}
+                    </Text>
+                  )}
+                </View>
+                <View
+                  accessibilityLabel={`${Math.round((shoe.nextCard / 312) * 100)} percent of shoe dealt`}
+                  style={s.track}
+                >
+                  <View
+                    style={{
+                      height: 8,
+                      borderRadius: 4,
+                      width: `${(shoe.nextCard / 312) * 100}%`,
+                      backgroundColor: colors.green,
+                    }}
+                  />
+                </View>
+                {round?.phase === "complete" &&
+                  active.checkpointRound === shoe.rounds &&
+                  active.session.feedback === "coach" && (
+                    <Button
+                      label="Count walkthrough"
+                      variant="ghost"
+                      style={s.smallButton}
+                      onPress={() => setMore(true)}
+                    />
+                  )}
+              </View>
+            )}
+            {!!notice && <Body style={{ color: colors.green }}>{notice}</Body>}
+          </>
+        )}
+      </Page>
+      <DetailSheet
+        visible={more}
+        title={
+          feedback && active.session.feedback === "coach"
+            ? "Understand this decision"
+            : "Your practice table"
+        }
+        onClose={() => setMore(false)}
+        reducedMotion={data.settings.reducedMotion}
+      >
+        {feedback && active.session.feedback === "coach" ? (
+          <DecisionExplanation
+            scenario={feedback.scenario}
+            rules={displayRules}
+            countMode={active.countMode}
+            chosen={feedback.chosen}
+          />
+        ) : (
+          <>
+            {round?.phase === "complete" && !feedback && (
+              <>
+                <Heading>Completed hands</Heading>
+                {round.hands.map((hand, index) => (
+                  <View key={hand.id} style={{ gap: 6 }}>
+                    <Text style={s.small}>
+                      Hand {index + 1} · {hand.result}
+                    </Text>
+                    <View style={s.cardRow}>
+                      {hand.cards.map((card) => (
+                        <PlayingCard key={card.id} card={card} small />
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+            <Body>
+              Six decks · blackjack pays 3:2 · dealer{" "}
+              {displayRules.hitSoft17 ? "hits" : "stands on"} soft 17 ·{" "}
+              {displayRules.surrender ? "late surrender" : "no surrender"} ·
+              shoe {shoe.shuffleNumber}.
+            </Body>
+            <Body>
+              Count every exposed card, including other split hands and the
+              dealer’s final cards. The hidden hole card does not enter your
+              running count until it is revealed.
+            </Body>
+            <Body>
+              Double adds an equal bet and is available on your first two cards.
+              Splitting requires a pair of equal-value cards; the table allows
+              up to four hands. Split aces receive one new card each.
+            </Body>
+            {shown && (
+              <Body>
+                {actionRestriction("split", shown, displayRules) ||
+                  "Split is available for the current hand."}
+              </Body>
+            )}
+            <Body>
+              {active.session.feedback === "coach"
+                ? "Coach gives feedback after every decision. Your decision quality is scored separately from the outcome of the hand."
+                : "Challenge saves your decisions and count checkpoints for the session review. Feedback stays hidden while you play."}
+            </Body>
+            {round?.phase === "complete" &&
+              active.checkpointRound === shoe.rounds &&
+              active.session.feedback === "coach" && (
+                <>
+                  <Heading>Exposed-card count walkthrough</Heading>
+                  <Body>
+                    {visibleCards(shoe)
+                      .map(
+                        (c, i, arr) =>
+                          `${c.rank}${c.suit} (${signed(hiLo(c))}) → ${signed(arr.slice(0, i + 1).reduce((n, x) => n + hiLo(x), 0))}`,
+                      )
+                      .join("   ·   ")}
+                  </Body>
+                </>
+              )}
+          </>
+        )}
+        {active.paused && (
+          <Body>
+            The table is paused. Close this sheet and tap Resume when you are
+            ready.
+          </Body>
+        )}
+        <Button
+          label={betweenRounds ? "Finish session" : "End after this round"}
+          variant="secondary"
+          onPress={() => {
+            setMore(false);
+            finish();
+          }}
+        />
+        <Button
+          label="Play casino mode"
+          variant="ghost"
+          onPress={() => {
+            setMore(false);
+            openCasino();
+          }}
+        />
+      </DetailSheet>
+    </>
   );
 }
 const s = StyleSheet.create({
+  tableHands: { width: "100%", alignItems: "center", gap: 7 },
+  tableHandsRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  handColumn: { flex: 1, minWidth: 0 },
+  checkpointRow: { flexDirection: "row", gap: 8 },
+  checkpointField: { flex: 1, minWidth: 0, gap: 3 },
+  compactHeader: { flexDirection: "row", alignItems: "center", gap: 4 },
+  compactTitle: {
+    color: colors.text,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "600",
+  },
+  small: { color: colors.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
+  smallButton: { minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 },
+  dockRow: { flexDirection: "row", gap: 6 },
+  dockPrimary: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+  },
+  compactPanel: { padding: 12, gap: 10 },
+  checkpointInput: {
+    minHeight: 44,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  cardRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+  },
   table: {
     backgroundColor: "#13352F",
     borderRadius: 26,
-    padding: 24,
+    padding: 12,
     borderWidth: 1,
     borderColor: "#315C4D",
-    gap: 19,
+    gap: 7,
     alignItems: "center",
     overflow: "hidden",
   },
@@ -1292,7 +1511,7 @@ const s = StyleSheet.create({
     color: "#8AAC9A",
     marginVertical: 2,
   },
-  handArea: { alignItems: "center", gap: 13, marginBottom: 5 },
+  handArea: { alignItems: "center", gap: 7, marginBottom: 0 },
   actions: {
     alignSelf: "stretch",
     flexDirection: "row",

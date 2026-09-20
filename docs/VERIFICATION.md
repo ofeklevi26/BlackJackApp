@@ -1,6 +1,13 @@
 # Verification
 
-Latest verification: September 20, 2026. See the [full QA report](QA-REPORT.md) for the completed functional audit, fixes, and precise coverage limits.
+Latest verification: September 20, 2026. See the [practice and casino follow-up](PRACTICE-CASINO-VERIFICATION.md) and the earlier [full QA report](QA-REPORT.md) for coverage and device limits.
+
+## Compact practice and casino update
+
+- TypeScript checking and all **110 automated tests** passed, including 400 additional casino rounds with independent wallet reconciliation.
+- Web, iOS, and Android production bundle exports passed.
+- Phone viewport walkthroughs verified pinned strategy, counting, and casino controls, richer explanation sheets, casino wallet changes, saved rounds, and preserved training on mode changes.
+- Physical-device rendering, native keyboard behavior, and signed builds remain unverified.
 
 ## After QA fixes
 

@@ -11,6 +11,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StoreProvider, useStore, exportHistory } from "../src/state/store";
 import { colors, Body, Heading, Button, Panel, Chip, shared } from "../src/ui";
 
@@ -138,8 +139,8 @@ function Settings({ close }: { close: () => void }) {
           {confirm ? (
             <>
               <Body style={{ color: colors.red }}>
-                Reset lessons, history, bookmarks, and your active session on
-                this device?
+                Reset lessons, history, bookmarks, casino chips, and your active
+                session on this device?
               </Body>
               <View style={shared.row}>
                 <Button
@@ -174,6 +175,7 @@ function Settings({ close }: { close: () => void }) {
   );
 }
 function Navigation() {
+  const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(false);
   const { data, update } = useStore();
   return (
@@ -221,9 +223,9 @@ function Navigation() {
           tabBarStyle: {
             backgroundColor: colors.bg,
             borderTopColor: colors.border,
-            height: 76,
+            height: 64 + Math.max(insets.bottom, 12),
             paddingTop: 10,
-            paddingBottom: 12,
+            paddingBottom: Math.max(insets.bottom, 12),
           },
           tabBarActiveTintColor: colors.green,
           tabBarInactiveTintColor: colors.muted,
