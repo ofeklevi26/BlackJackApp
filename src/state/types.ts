@@ -1,0 +1,83 @@
+import type { Action, Rules, Scenario, ShoeSession } from "../engine";
+import type { CountingState, CountResult } from "../counting";
+export type FeedbackMode = "coach" | "challenge";
+export type Settings = {
+  rules: Rules;
+  feedback: FeedbackMode;
+  assistance: boolean;
+  haptics: boolean;
+  reducedMotion: boolean;
+  sound: boolean;
+};
+export type Decision = {
+  id: string;
+  scenario: Scenario;
+  chosen: Action;
+  recommended: Action;
+  explanation: string;
+  correct: boolean;
+  responseMs: number;
+  assisted: boolean;
+  replay: boolean;
+  category: string;
+};
+export type Session = {
+  id: string;
+  startedAt: number;
+  endedAt?: number;
+  kind: "strategy" | "simulator" | "counting";
+  topic: string;
+  sampling?: "balanced" | "realistic";
+  rules: Rules;
+  feedback: FeedbackMode;
+  assisted: boolean;
+  decisions: Decision[];
+  durationMs: number;
+  rounds: number;
+  profit: number;
+  countResult?: CountResult;
+  insurance?: {
+    round: number;
+    taken: boolean;
+    recommended: boolean;
+    correct: boolean;
+  }[];
+  checkpoints?: {
+    runningExpected: number;
+    runningSubmitted: number;
+    decksExpected: number;
+    decksSubmitted: number;
+    trueExpected: number;
+    trueSubmitted: number;
+  }[];
+};
+export type Training = {
+  session: Session;
+  scenario?: Scenario;
+  shoe?: ShoeSession;
+  seed: number;
+  target: number;
+  timeLimitMs: number;
+  elapsedMs: number;
+  thinkingMs?: number;
+  feedback?: Decision;
+  paused: boolean;
+  sampling: "balanced" | "realistic";
+  countMode: boolean;
+  reviewOnly: boolean;
+  checkpointEvery?: number;
+  checkpointRound?: number;
+  finishAfterRound?: boolean;
+};
+export type AppData = {
+  version: 1;
+  onboarding: boolean;
+  experience: string;
+  goal: string;
+  completedLessons: Record<string, number>;
+  settings: Settings;
+  sessions: Session[];
+  bookmarks: { scenario: Scenario; rules: Rules; countMode: boolean }[];
+  active: Training | null;
+  counting: CountingState | null;
+};
