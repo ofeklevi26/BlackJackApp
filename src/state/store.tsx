@@ -37,6 +37,7 @@ export const initialData = (): AppData => ({
   bookmarks: [],
   active: null,
   counting: null,
+  casino: null,
 });
 type Context = {
   data: AppData;

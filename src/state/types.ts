@@ -1,5 +1,6 @@
 import type { Action, Rules, Scenario, ShoeSession } from "../engine";
 import type { CountingState, CountResult } from "../counting";
+import type { CasinoState } from "./casino";
 export type FeedbackMode = "coach" | "challenge";
 export type Settings = {
   rules: Rules;
@@ -81,4 +82,5 @@ export type AppData = {
   bookmarks: { scenario: Scenario; rules: Rules; countMode: boolean }[];
   active: Training | null;
   counting: CountingState | null;
+  casino?: CasinoState | null;
 };

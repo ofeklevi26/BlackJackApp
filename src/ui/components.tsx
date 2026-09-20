@@ -13,15 +13,29 @@ import {
 import { colors } from "./theme";
 import type { Card } from "../engine/types";
 
-export function Page({ children }: PropsWithChildren) {
+export function Page({
+  children,
+  footer,
+  compact = false,
+}: PropsWithChildren<{ footer?: React.ReactNode; compact?: boolean }>) {
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={s.page}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={s.pageInner}>{children}</View>
-    </ScrollView>
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.bg }}>
+      <ScrollView
+        style={{ flex: 1, minHeight: 0 }}
+        contentContainerStyle={[
+          s.page,
+          compact && { padding: 12, paddingBottom: 12 },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[s.pageInner, compact && { gap: 12 }]}>{children}</View>
+      </ScrollView>
+      {footer != null && (
+        <View style={s.footerDock}>
+          <View style={s.footerInner}>{footer}</View>
+        </View>
+      )}
+    </View>
   );
 }
 export function Panel({
@@ -244,6 +258,15 @@ export const shared = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
 });
 const s = StyleSheet.create({
+  footerDock: {
+    padding: 12,
+    paddingTop: 10,
+    backgroundColor: colors.bg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: "center",
+  },
+  footerInner: { width: "100%", maxWidth: 760, gap: 8 },
   page: { padding: 22, paddingBottom: 42, alignItems: "center" },
   pageInner: { width: "100%", maxWidth: 1050, gap: 24 },
   panel: {

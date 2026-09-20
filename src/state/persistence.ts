@@ -1,5 +1,12 @@
 import { hiLo, RANKS, SUITS, type Card } from "../engine";
 import type { AppData } from "./types";
+import {
+  CASINO_MAX_BET,
+  CASINO_MIN_BET,
+  CASINO_REFILL,
+  casinoCommitted,
+  type CasinoState,
+} from "./casino";
 
 type ObjectValue = Record<string, unknown>;
 
@@ -639,6 +646,42 @@ function counting(value: unknown, path: string) {
     );
 }
 
+function casino(value: unknown, path: string) {
+  const data = object(value, path);
+  check(data.version === 1, `${path}.version is unsupported`);
+  text(data.id, `${path}.id`);
+  number(data.createdAt, `${path}.createdAt`, 0);
+  number(data.revision, `${path}.revision`, 0, Infinity, true);
+  number(data.selectedBet, `${path}.selectedBet`, 0, CASINO_MAX_BET);
+  number(data.lastBet, `${path}.lastBet`, CASINO_MIN_BET, CASINO_MAX_BET);
+  check(
+    (data.selectedBet as number) % CASINO_MIN_BET === 0 &&
+      (data.lastBet as number) % CASINO_MIN_BET === 0,
+    `${path} wagers must use table chip increments`,
+  );
+  const refills = number(
+    data.refillCount,
+    `${path}.refillCount`,
+    0,
+    Infinity,
+    true,
+  );
+  check(
+    data.deposits === (refills + 1) * CASINO_REFILL,
+    `${path}.deposits does not match virtual refills`,
+  );
+  shoe(data.shoe, `${path}.shoe`);
+  const bankroll = number(
+    (data.shoe as ObjectValue).bankroll,
+    `${path}.shoe.bankroll`,
+    0,
+  );
+  check(
+    bankroll >= casinoCommitted(data as CasinoState),
+    `${path} has wagers exceeding its balance`,
+  );
+}
+
 /** Decode versioned local data without dealing cards, recomputing history, or counting time away. */
 export function decodeSavedData(raw: string, defaults: AppData): AppData {
   let parsed: unknown;
@@ -695,5 +738,7 @@ export function decodeSavedData(raw: string, defaults: AppData): AppData {
     counting(result.counting, "counting");
     result.counting = { ...result.counting, paused: true };
   }
+  if (result.casino !== undefined && result.casino !== null)
+    casino(result.casino, "casino");
   return result;
 }
