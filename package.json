@@ -1,0 +1,26 @@
+{
+  "name": "acewise",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "export:web": "expo export --platform web",
+    "check": "pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "expo": "~57.0.24", "react": "19.2.3", "react-dom": "19.2.3", "react-native": "0.86.3",
+    "react-native-web": "~0.21.0", "expo-router": "~57.0.22", "expo-constants": "~57.0.19",
+    "expo-linking": "~57.0.10", "expo-status-bar": "~57.0.1", "expo-haptics": "~57.0.3",
+    "expo-audio": "~57.0.5", "expo-dev-client": "~57.0.19", "expo-linear-gradient": "~57.0.2",
+    "@expo/vector-icons": "^15.0.2", "@react-native-async-storage/async-storage": "2.2.0",
+    "react-native-safe-area-context": "~5.7.0", "react-native-screens": "~4.26.0", "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": { "typescript": "~6.0.2", "tsx": "^4.21.0", "@types/node": "^24.0.0", "@types/react": "~19.2.2", "@react-native/metro-config": "0.86.3" }
+}
