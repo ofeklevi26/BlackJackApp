@@ -18,6 +18,7 @@ import {
   Page,
   Panel,
   PlayingCard,
+  Reveal,
 } from "../ui";
 import { colors } from "../ui/theme";
 import {
@@ -185,7 +186,7 @@ function NumberEntry({
         </View>
       ))}
       {value !== "" && value !== "-" && !validCountInput(value) && (
-        <Body style={{ color: colors.gold }}>
+        <Body style={{ color: colors.warning }}>
           Enter a whole count, such as −3, 0, or +2.
         </Body>
       )}
@@ -574,29 +575,41 @@ export default function CountingTrainer({
     </View>
   ) : latestAnswer ? (
     <View style={s.dock}>
-      <View accessibilityLiveRegion="polite" style={s.feedbackMini}>
-        <Text
+      <Reveal reducedMotion={settings.reducedMotion} resetKey={latestAnswer.id}>
+        <View
+          accessibilityLiveRegion="polite"
           style={[
-            s.compactFeedback,
-            {
-              color:
-                latestAnswer.absoluteError === 0 ? colors.green : colors.gold,
-            },
+            s.feedbackMini,
+            latestAnswer.absoluteError === 0
+              ? s.correctFeedback
+              : s.reviewFeedback,
           ]}
         >
-          {latestAnswer.absoluteError === 0 ? "✓ Correct" : "Let’s review"}
-        </Text>
-        <Text style={s.small}>
-          You{" "}
-          {latestAnswer.kind === "deck-estimate"
-            ? latestAnswer.submitted
-            : signed(latestAnswer.submitted)}{" "}
-          · Answer{" "}
-          {latestAnswer.kind === "deck-estimate"
-            ? latestAnswer.expected
-            : signed(latestAnswer.expected)}
-        </Text>
-      </View>
+          <Text
+            style={[
+              s.compactFeedback,
+              {
+                color:
+                  latestAnswer.absoluteError === 0
+                    ? colors.positive
+                    : colors.warning,
+              },
+            ]}
+          >
+            {latestAnswer.absoluteError === 0 ? "✓ Correct" : "Let’s review"}
+          </Text>
+          <Text style={s.small}>
+            You{" "}
+            {latestAnswer.kind === "deck-estimate"
+              ? latestAnswer.submitted
+              : signed(latestAnswer.submitted)}{" "}
+            · Answer{" "}
+            {latestAnswer.kind === "deck-estimate"
+              ? latestAnswer.expected
+              : signed(latestAnswer.expected)}
+          </Text>
+        </View>
+      </Reveal>
       <View style={s.dockRow}>
         <Button
           label={
@@ -914,6 +927,18 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  correctFeedback: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
+  },
+  reviewFeedback: {
+    backgroundColor: colors.redSoft,
+    borderColor: colors.red,
   },
   compactFeedback: { fontSize: 16, fontWeight: "600", flexShrink: 1 },
   question: {
@@ -943,14 +968,17 @@ const s = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  modeSelected: { borderColor: colors.green, backgroundColor: "#163A34" },
+  modeSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
   modeTitle: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
     lineHeight: 19,
   },
-  modeDetail: { color: colors.green, fontSize: 11, lineHeight: 15 },
+  modeDetail: { color: colors.accent, fontSize: 11, lineHeight: 15 },
   label: {
     color: colors.muted,
     fontSize: 11,
@@ -961,7 +989,8 @@ const s = StyleSheet.create({
   small: { color: colors.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
   table: {
     alignItems: "center",
-    backgroundColor: "#112E2A",
+    backgroundColor: colors.table,
+    borderColor: colors.tableBorder,
     gap: 8,
     padding: 12,
   },
@@ -979,10 +1008,10 @@ const s = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 9,
     borderRadius: 9,
-    backgroundColor: "#1A3B33",
+    backgroundColor: colors.accentSoft,
   },
   assistanceText: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     lineHeight: 18,
     textAlign: "center",
@@ -999,7 +1028,7 @@ const s = StyleSheet.create({
     borderRadius: 5,
     overflow: "hidden",
   },
-  progressFill: { height: 3, backgroundColor: colors.green, borderRadius: 5 },
+  progressFill: { height: 3, backgroundColor: colors.accent, borderRadius: 5 },
   numberInput: {
     color: colors.text,
     backgroundColor: colors.bg,
@@ -1041,9 +1070,9 @@ const s = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  divide: { color: colors.gold, fontSize: 26 },
+  divide: { color: colors.red, fontSize: 26 },
   walkCard: { alignItems: "center", gap: 6 },
-  walkValue: { color: colors.green, fontWeight: "700", fontSize: 15 },
+  walkValue: { color: colors.accent, fontWeight: "700", fontSize: 15 },
   trayArea: {
     flexDirection: "row",
     justifyContent: "center",
@@ -1054,29 +1083,29 @@ const s = StyleSheet.create({
     width: 108,
     height: 118,
     borderWidth: 2,
-    borderColor: "#78968C",
+    borderColor: colors.muted,
     borderTopWidth: 0,
     borderBottomLeftRadius: 5,
     borderBottomRightRadius: 5,
     justifyContent: "flex-end",
     paddingHorizontal: 5,
-    backgroundColor: "#122823",
+    backgroundColor: colors.bg,
   },
   trayMark: {
     position: "absolute",
     height: 1,
     right: 0,
     width: 12,
-    backgroundColor: "#78968C",
+    backgroundColor: colors.muted,
   },
   discards: {
-    backgroundColor: "#E4DFD1",
+    backgroundColor: colors.ivory,
     borderRadius: 3,
     width: 92,
     overflow: "hidden",
   },
   referenceDeck: {
-    backgroundColor: "#E4DFD1",
+    backgroundColor: colors.ivory,
     borderRadius: 3,
     width: 76,
     overflow: "hidden",
@@ -1086,6 +1115,6 @@ const s = StyleSheet.create({
     height: 1,
     left: 0,
     right: 0,
-    backgroundColor: "#AAA698",
+    backgroundColor: colors.muted,
   },
 });

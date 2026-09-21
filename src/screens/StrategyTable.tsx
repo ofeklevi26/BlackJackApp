@@ -22,6 +22,7 @@ import {
   Eyebrow,
   Heading,
   PlayingCard,
+  Reveal,
   colors,
 } from "../ui";
 import DecisionExplanation from "./DecisionExplanation";
@@ -202,48 +203,55 @@ export default function StrategyTable({
                 )}
               </View>
               {feedback ? (
-                <View
-                  accessibilityLiveRegion="polite"
-                  style={[
-                    s.feedback,
-                    {
-                      borderColor: !coach
-                        ? colors.border
-                        : feedback.correct
-                          ? "#43846C"
-                          : "#8E665A",
-                    },
-                  ]}
-                >
-                  <Text
+                <Reveal reducedMotion={reducedMotion} resetKey={feedback.id}>
+                  <View
+                    accessibilityLiveRegion="polite"
                     style={[
-                      s.feedbackTitle,
+                      s.feedback,
                       {
-                        color: !coach
-                          ? colors.text
+                        borderColor: !coach
+                          ? colors.border
                           : feedback.correct
-                            ? colors.green
-                            : colors.gold,
+                            ? colors.accentBorder
+                            : colors.red,
+                        backgroundColor: !coach
+                          ? colors.surface
+                          : feedback.correct
+                            ? colors.accentSoft
+                            : colors.redSoft,
                       },
                     ]}
                   >
-                    {!coach
-                      ? `Recorded: ${label(feedback.chosen)}`
-                      : feedback.correct
-                        ? `${label(feedback.chosen)} is correct.`
-                        : `${label(feedback.recommended)} is recommended.`}
-                  </Text>
-                  <Text style={s.feedbackBody}>
-                    {coach
-                      ? recommendation?.reason || feedback.explanation
-                      : "Your explanation and score will appear in the session review."}
-                  </Text>
-                  {coach && !feedback.correct && (
-                    <Text style={s.subtle}>
-                      You chose {label(feedback.chosen)}.
+                    <Text
+                      style={[
+                        s.feedbackTitle,
+                        {
+                          color: !coach
+                            ? colors.text
+                            : feedback.correct
+                              ? colors.positive
+                              : colors.warning,
+                        },
+                      ]}
+                    >
+                      {!coach
+                        ? `Recorded: ${label(feedback.chosen)}`
+                        : feedback.correct
+                          ? `✓ ${label(feedback.chosen)} is correct.`
+                          : `${label(feedback.recommended)} is recommended.`}
                     </Text>
-                  )}
-                </View>
+                    <Text style={s.feedbackBody}>
+                      {coach
+                        ? recommendation?.reason || feedback.explanation
+                        : "Your explanation and score will appear in the session review."}
+                    </Text>
+                    {coach && !feedback.correct && (
+                      <Text style={s.subtle}>
+                        You chose {label(feedback.chosen)}.
+                      </Text>
+                    )}
+                  </View>
+                </Reveal>
               ) : (
                 <Text style={s.prompt}>What’s your move?</Text>
               )}
@@ -447,7 +455,7 @@ const s = StyleSheet.create({
     paddingVertical: 8,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1,
@@ -461,7 +469,7 @@ const s = StyleSheet.create({
     marginBottom: 10,
     overflow: "hidden",
   },
-  fill: { height: 3, backgroundColor: colors.green },
+  fill: { height: 3, backgroundColor: colors.accent },
   main: { flex: 1, minHeight: 0 },
   mainContent: {
     flexGrow: 1,
@@ -470,9 +478,9 @@ const s = StyleSheet.create({
     paddingBottom: 10,
   },
   table: {
-    backgroundColor: "#13352F",
+    backgroundColor: colors.table,
     borderWidth: 1,
-    borderColor: "#315C4D",
+    borderColor: colors.tableBorder,
     borderRadius: 22,
     padding: 16,
     gap: 12,
@@ -489,14 +497,14 @@ const s = StyleSheet.create({
   tableLabel: {
     fontSize: 10,
     letterSpacing: 1.5,
-    color: "#B8D4C5",
+    color: colors.muted,
     fontWeight: "700",
   },
-  tableMark: { color: "#7FAD94", fontSize: 9, letterSpacing: 2 },
+  tableMark: { color: colors.accent, fontSize: 9, letterSpacing: 2 },
   total: { color: colors.ivory, fontSize: 12, fontWeight: "600" },
-  count: { color: colors.gold, fontSize: 13, textAlign: "center" },
+  count: { color: colors.red, fontSize: 13, textAlign: "center" },
   hint: {
-    color: colors.green,
+    color: colors.accent,
     fontSize: 12,
     lineHeight: 17,
     textAlign: "center",
@@ -538,6 +546,6 @@ const s = StyleSheet.create({
     paddingVertical: 9,
   },
   pause: { alignItems: "center", gap: 15, padding: 24 },
-  pauseSymbol: { color: colors.green, fontSize: 48 },
-  notice: { color: colors.green, fontSize: 12, textAlign: "center" },
+  pauseSymbol: { color: colors.accent, fontSize: 48 },
+  notice: { color: colors.accent, fontSize: 12, textAlign: "center" },
 });

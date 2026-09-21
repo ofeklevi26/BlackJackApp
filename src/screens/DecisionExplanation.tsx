@@ -50,7 +50,7 @@ export default function DecisionExplanation({
         </Text>
         <Body>{detail.dealer}</Body>
       </View>
-      <View style={s.section}>
+      <View style={[s.section, s.recommendation]}>
         <Text accessibilityRole="header" style={s.smallHeading}>
           Why {detail.recommendation.action} here?
         </Text>
@@ -85,7 +85,7 @@ export default function DecisionExplanation({
               <Text
                 style={[
                   s.optionTitle,
-                  alternative.chosen && { color: colors.gold },
+                  alternative.chosen && { color: colors.red },
                 ]}
               >
                 {label(alternative.action)}
@@ -152,7 +152,7 @@ export default function DecisionExplanation({
         {!!sourceError && (
           <Text
             accessibilityLiveRegion="polite"
-            style={[s.note, { color: colors.gold }]}
+            style={[s.note, { color: colors.warning }]}
           >
             {sourceError}
           </Text>
@@ -173,9 +173,16 @@ const s = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
+  recommendation: {
+    backgroundColor: colors.accentSoft,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    borderRadius: 12,
+    padding: 14,
+  },
   highlight: {
-    backgroundColor: "#173C35",
-    borderColor: "#356250",
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
     borderWidth: 1,
     borderRadius: 14,
     padding: 16,
@@ -187,12 +194,12 @@ const s = StyleSheet.create({
     paddingLeft: 13,
     gap: 5,
   },
-  chosen: { borderLeftColor: colors.gold },
+  chosen: { borderLeftColor: colors.red },
   optionTitle: { color: colors.text, fontWeight: "600", fontSize: 14 },
   patternTitle: { color: colors.muted, fontSize: 12, marginTop: 3 },
   patternRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   patternAction: {
-    color: colors.green,
+    color: colors.accent,
     width: 80,
     fontSize: 14,
     fontWeight: "600",

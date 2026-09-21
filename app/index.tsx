@@ -21,6 +21,7 @@ import {
   Chip,
   Stat,
   PlayingCard,
+  Reveal,
   colors,
   shared,
 } from "../src/ui";
@@ -39,8 +40,8 @@ export default function Home() {
     <Page>
       <View style={shared.between}>
         <View style={{ gap: 7, flex: 1, minWidth: 220 }}>
-          <Eyebrow>YOUR NEXT GOOD DECISION STARTS HERE</Eyebrow>
-          <Title>A little practice.{"\n"}A sharper instinct.</Title>
+          <Eyebrow>THE EDGE IS IN THE PRACTICE</Eyebrow>
+          <Title>Better reads.{"\n"}Bolder moves.</Title>
         </View>
         <Chip
           label={
@@ -56,7 +57,7 @@ export default function Home() {
         </Panel>
       )}
       {!data.onboarding && (
-        <Panel style={{ borderColor: "#426959" }}>
+        <Panel style={{ borderColor: colors.accentBorder }}>
           <Eyebrow>WELCOME TO ACEWISE</Eyebrow>
           <Heading>Let’s find your starting point.</Heading>
           <Body>
@@ -136,81 +137,126 @@ export default function Home() {
           </View>
         </Panel>
       )}
-      <LinearGradient
-        colors={["#1A4B42", "#153A35", "#12292D"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[s.hero, { flexDirection: wide ? "row" : "column" }]}
-      >
-        <View style={{ flex: 1, gap: 17, zIndex: 1 }}>
-          <View style={shared.row}>
-            <Text style={s.tag}>THE DAILY PRACTICE</Text>
-            <Text style={{ color: "#ABD0C1", fontSize: 12 }}>
-              5 minutes, well spent
-            </Text>
-          </View>
-          <Text style={s.heroTitle}>
-            {data.active || data.counting
-              ? "Your table is waiting."
-              : "Build confidence,\none hand at a time."}
-          </Text>
-          <Body style={{ color: "#C0D9CD", maxWidth: 400 }}>
-            Know your move. Understand the why. Turn every decision into
-            something you can use.
-          </Body>
-          <View style={{ alignSelf: "flex-start", marginTop: 8 }}>
-            <Button
-              label={
-                data.active || data.counting
-                  ? "Continue training  →"
-                  : "Start a quick session  →"
-              }
-              onPress={() => {
-                if (!data.active && !data.counting)
-                  update((d) => ({
-                    ...d,
-                    active: newTraining(d, { target: 10 }),
-                  }));
-                router.push("/practice");
-              }}
-            />
-          </View>
-        </View>
-        <View
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={[
-            s.heroArt,
-            { width: wide ? 270 : "100%", height: wide ? 220 : 155 },
-          ]}
+      <Reveal reducedMotion={data.settings.reducedMotion}>
+        <LinearGradient
+          colors={["#183D7D", "#152C57", "#30223F"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[s.hero, { flexDirection: wide ? "row" : "column" }]}
         >
-          <View style={[s.ring, { width: 220, height: 220 }]} />
-          <View style={[s.ring, { width: 180, height: 180 }]} />
-          <View
-            style={{
-              transform: [{ rotate: "-18deg" }, { translateX: 22 }],
-              marginTop: 26,
-            }}
-          >
-            <PlayingCard card={makeCard("A")} />
+          <View style={{ flex: 1, gap: 17, zIndex: 1 }}>
+            <View style={shared.row}>
+              <Text style={s.tag}>YOUR NEXT LEVEL</Text>
+              <Text style={{ color: "#B9D1FF", fontSize: 12 }}>
+                A few minutes. A sharper instinct.
+              </Text>
+            </View>
+            <Text style={s.heroTitle}>
+              {data.active || data.counting
+                ? "Your table is waiting."
+                : "Make your\nnext move count."}
+            </Text>
+            <Body style={{ color: "#CBDCFF", maxWidth: 400 }}>
+              Know your move. Understand the why. Turn every decision into
+              something you can use.
+            </Body>
+            <View style={{ alignSelf: "flex-start", marginTop: 8 }}>
+              <Button
+                label={
+                  data.active || data.counting
+                    ? "Continue training  →"
+                    : "Start a quick session  →"
+                }
+                onPress={() => {
+                  if (!data.active && !data.counting)
+                    update((d) => ({
+                      ...d,
+                      active: newTraining(d, { target: 10 }),
+                    }));
+                  router.push("/practice");
+                }}
+              />
+            </View>
           </View>
           <View
-            style={{
-              transform: [{ rotate: "12deg" }, { translateX: -8 }],
-              marginTop: -15,
-            }}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={[
+              s.heroArt,
+              { width: wide ? 270 : "100%", height: wide ? 220 : 155 },
+            ]}
           >
-            <PlayingCard card={makeCard("K")} />
-          </View>
-          <View style={s.chip}>
-            <Text
-              style={{ color: colors.gold, fontSize: 12, fontWeight: "700" }}
+            <View style={[s.ring, { width: 220, height: 220 }]} />
+            <View style={[s.ring, { width: 180, height: 180 }]} />
+            <View
+              style={{
+                transform: [{ rotate: "-18deg" }, { translateX: 22 }],
+                marginTop: 26,
+              }}
             >
-              21
+              <PlayingCard card={{ ...makeCard("A", "home-ace"), suit: "♠" }} />
+            </View>
+            <View
+              style={{
+                transform: [{ rotate: "12deg" }, { translateX: -8 }],
+                marginTop: -15,
+              }}
+            >
+              <PlayingCard
+                card={{ ...makeCard("K", "home-king"), suit: "♥" }}
+              />
+            </View>
+            <View style={s.chip}>
+              <Text
+                style={{ color: colors.gold, fontSize: 12, fontWeight: "700" }}
+              >
+                21
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
+      </Reveal>
+      <View style={s.milestone}>
+        <View style={s.milestoneIcon}>
+          <Ionicons
+            name="ribbon-outline"
+            size={24}
+            color={completed === 10 ? colors.red : colors.blue}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+          <View style={shared.between}>
+            <Text
+              style={{ color: colors.text, fontSize: 14, fontWeight: "700" }}
+            >
+              {completed === 10
+                ? "Learning path complete"
+                : "Build your blackjack instinct"}
+            </Text>
+            <Text style={{ color: colors.blue, fontSize: 12 }}>
+              {completed}/10 lessons
             </Text>
           </View>
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Learning path"
+            accessibilityValue={{ min: 0, max: 10, now: completed }}
+            style={s.segments}
+          >
+            {Array.from({ length: 10 }, (_, index) => (
+              <View
+                key={index}
+                style={[
+                  s.segment,
+                  index < completed && {
+                    backgroundColor: index === 9 ? colors.red : colors.blue,
+                  },
+                ]}
+              />
+            ))}
+          </View>
         </View>
-      </LinearGradient>
+      </View>
       <Panel>
         <View style={shared.row}>
           <Stat
@@ -243,6 +289,7 @@ export default function Home() {
             description:
               "Bet virtual money and play complete rounds. No quizzes, just blackjack.",
             tag: "TAKE A SEAT",
+            accent: colors.red,
             action: () => go("casino"),
           },
           {
@@ -251,6 +298,7 @@ export default function Home() {
             description:
               "Make the right call on hard hands, soft hands, and pairs.",
             tag: "BUILD YOUR FOUNDATION",
+            accent: colors.blue,
             action: () => go("mixed"),
           },
           {
@@ -258,6 +306,7 @@ export default function Home() {
             title: "Card counting",
             description: "Find your rhythm with Hi-Lo and true-count drills.",
             tag: "TRAIN YOUR ATTENTION",
+            accent: colors.blue,
             action: () => go("count"),
           },
           {
@@ -265,6 +314,7 @@ export default function Home() {
             title: "The practice table",
             description: "Bring it all together in a continuous six-deck shoe.",
             tag: "PUT IT INTO PRACTICE",
+            accent: colors.red,
             action: () => go("simulator"),
           },
         ].map((item) => (
@@ -275,18 +325,33 @@ export default function Home() {
             accessibilityLabel={item.title}
             style={({ pressed }) => [
               s.focus,
-              { minWidth: wide ? 220 : 260, opacity: pressed ? 0.75 : 1 },
+              {
+                minWidth: wide ? 220 : 260,
+                opacity: pressed ? 0.75 : 1,
+                borderTopColor: item.accent,
+                borderTopWidth: 2,
+              },
             ]}
           >
-            <View style={s.iconBox}>
-              <Ionicons name={item.icon} size={24} color={colors.green} />
+            <View
+              style={[
+                s.iconBox,
+                {
+                  backgroundColor:
+                    item.accent === colors.red
+                      ? colors.redSoft
+                      : colors.accentSoft,
+                },
+              ]}
+            >
+              <Ionicons name={item.icon} size={24} color={item.accent} />
             </View>
             <Eyebrow>{item.tag}</Eyebrow>
             <Heading>{item.title}</Heading>
             <Body>{item.description}</Body>
             <Text
               style={{
-                color: colors.green,
+                color: item.accent,
                 fontSize: 20,
                 alignSelf: "flex-end",
               }}
@@ -296,7 +361,7 @@ export default function Home() {
           </Pressable>
         ))}
       </View>
-      <Panel style={{ backgroundColor: "#15282C" }}>
+      <Panel style={{ backgroundColor: colors.surface }}>
         <View style={shared.between}>
           <View style={{ flex: 1, minWidth: 200, gap: 7 }}>
             <Eyebrow>
@@ -330,7 +395,7 @@ const s = StyleSheet.create({
     borderRadius: 24,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#356155",
+    borderColor: colors.accentBorder,
     alignItems: "center",
     gap: 12,
   },
@@ -338,9 +403,9 @@ const s = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1.4,
-    color: "#D0EBDF",
+    color: "#E0EBFF",
     borderWidth: 1,
-    borderColor: "#5C8B76",
+    borderColor: "#648AC3",
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 8,
@@ -361,7 +426,7 @@ const s = StyleSheet.create({
     position: "absolute",
     borderRadius: 120,
     borderWidth: 1,
-    borderColor: "#54877655",
+    borderColor: "#82AAEF44",
   },
   chip: {
     width: 47,
@@ -370,7 +435,7 @@ const s = StyleSheet.create({
     borderStyle: "dashed",
     borderColor: colors.gold,
     borderRadius: 25,
-    backgroundColor: "#305649",
+    backgroundColor: colors.redSoft,
     position: "absolute",
     bottom: 4,
     right: 38,
@@ -389,7 +454,7 @@ const s = StyleSheet.create({
   iconBox: {
     width: 46,
     height: 46,
-    backgroundColor: "#203F37",
+    backgroundColor: colors.accentSoft,
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
@@ -399,7 +464,32 @@ const s = StyleSheet.create({
     textAlign: "center",
     fontSize: 10,
     letterSpacing: 2,
-    color: "#69858A",
+    color: colors.muted,
     paddingVertical: 10,
+  },
+  milestone: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  milestoneIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentSoft,
+  },
+  segments: { flexDirection: "row", gap: 4, width: "100%" },
+  segment: {
+    flex: 1,
+    height: 6,
+    borderRadius: 4,
+    backgroundColor: colors.surface2,
   },
 });

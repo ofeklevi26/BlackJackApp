@@ -6,6 +6,7 @@ import {
   Switch,
   StyleSheet,
   Animated,
+  Platform,
   Keyboard,
   useWindowDimensions,
 } from "react-native";
@@ -54,6 +55,7 @@ import {
   Button,
   Chip,
   PlayingCard,
+  Reveal,
   colors,
   shared,
 } from "../src/ui";
@@ -129,15 +131,19 @@ export default function Practice() {
     locked.current = false;
     setMore(false);
     lastTick.current = Date.now();
+    fade.stopAnimation();
+    fade.setValue(1);
     if (!data.settings.reducedMotion) {
       fade.setValue(0.5);
-      Animated.timing(fade, {
+      const animation = Animated.timing(fade, {
         toValue: 1,
         duration: 180,
-        useNativeDriver: true,
-      }).start();
+        useNativeDriver: Platform.OS !== "web",
+      });
+      animation.start();
+      return () => animation.stop();
     }
-  }, [scenarioKey, active?.feedback?.id, active?.paused]);
+  }, [scenarioKey, active?.feedback?.id, active?.paused, data.settings.reducedMotion]);
   useEffect(() => {
     if (
       !active ||
@@ -443,6 +449,7 @@ export default function Practice() {
     return (
       <SessionReview
         session={summary}
+        celebrate
         onClose={() => {
           setSummary(null);
           router.push("/progress");
@@ -539,8 +546,8 @@ export default function Practice() {
             style={{
               flex: 1,
               minWidth: 250,
-              borderColor: "#7B6B44",
-              backgroundColor: "#192C2B",
+              borderColor: colors.accentBorder,
+              backgroundColor: colors.accentSoft,
             }}
           >
             <Eyebrow>JUST PLAY</Eyebrow>
@@ -878,26 +885,31 @@ export default function Practice() {
     />
   ) : feedback ? (
     <View style={{ gap: 6 }}>
-      <Text
-        accessibilityLiveRegion="polite"
-        style={[
-          s.small,
-          {
-            color:
-              active.session.feedback === "challenge"
-                ? colors.muted
-                : feedback.correct
-                  ? colors.green
-                  : colors.gold,
-          },
-        ]}
+      <Reveal
+        resetKey={feedback.id}
+        reducedMotion={data.settings.reducedMotion}
       >
-        {active.session.feedback === "challenge"
-          ? `${label(feedback.chosen)} recorded · review after the session`
-          : feedback.correct
-            ? `✓ ${label(feedback.chosen)} is the right move`
-            : `${label(feedback.recommended)} is recommended · you chose ${label(feedback.chosen)}`}
-      </Text>
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[
+            s.small,
+            {
+              color:
+                active.session.feedback === "challenge"
+                  ? colors.muted
+                  : feedback.correct
+                    ? colors.green
+                    : colors.gold,
+            },
+          ]}
+        >
+          {active.session.feedback === "challenge"
+            ? `${label(feedback.chosen)} recorded · review after the session`
+            : feedback.correct
+              ? `✓ ${label(feedback.chosen)} is the right move`
+              : `${label(feedback.recommended)} is recommended · you chose ${label(feedback.chosen)}`}
+        </Text>
+      </Reveal>
       <View style={s.dockRow}>
         <Button label="Continue hand" onPress={next} style={s.dockPrimary} />
         {active.session.feedback === "coach" && (
@@ -1485,11 +1497,11 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   table: {
-    backgroundColor: "#13352F",
+    backgroundColor: colors.table,
     borderRadius: 26,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#315C4D",
+    borderColor: colors.tableBorder,
     gap: 7,
     alignItems: "center",
     overflow: "hidden",
@@ -1502,13 +1514,13 @@ const s = StyleSheet.create({
     bottom: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#51796B44",
+    borderColor: "#80AAEF33",
   },
   tableMark: {
     fontSize: 10,
     fontWeight: "600",
     letterSpacing: 2,
-    color: "#8AAC9A",
+    color: "#9BB9EB",
     marginVertical: 2,
   },
   handArea: { alignItems: "center", gap: 7, marginBottom: 0 },

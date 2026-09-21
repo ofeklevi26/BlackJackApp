@@ -1,5 +1,16 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
+  Animated,
+  Easing,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -7,6 +18,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import {
@@ -21,6 +33,12 @@ import {
 } from "../engine";
 import { Body, Button as SharedButton, DetailSheet, PlayingCard } from "../ui";
 import { colors } from "../ui/theme";
+import {
+  cardMotionPlan,
+  DEAL_MS,
+  FLIP_MS,
+  type CardMotion,
+} from "../ui/casinoMotion";
 import { useStore } from "../state/store";
 import {
   CASINO_CHIPS,
@@ -59,10 +77,21 @@ const ACTIONS: { action: Action; label: string }[] = [
 const signedMoney = (value: number) =>
   `${value > 0 ? "+" : value < 0 ? "−" : ""}${casinoMoney(Math.abs(value))}`;
 
-function Button(props: React.ComponentProps<typeof SharedButton>) {
+const MotionContext = createContext<{
+  clock: Animated.Value;
+  cards: Map<string, CardMotion>;
+  busy: boolean;
+} | null>(null);
+
+function Button({
+  duringAnimation,
+  ...props
+}: React.ComponentProps<typeof SharedButton> & { duringAnimation?: boolean }) {
+  const motion = useContext(MotionContext);
   return (
     <SharedButton
       {...props}
+      disabled={props.disabled || (!duringAnimation && !!motion?.busy)}
       style={[
         { minHeight: 44, paddingVertical: 9, paddingHorizontal: 12 },
         props.style,
@@ -70,17 +99,14 @@ function Button(props: React.ComponentProps<typeof SharedButton>) {
     />
   );
 }
-function CasinoCard({
-  card,
-  hidden,
-  compact,
-  small,
-}: {
+type CasinoCardProps = {
   card?: Card;
   hidden?: boolean;
   compact: boolean;
   small?: boolean;
-}) {
+};
+
+function CasinoCardFace({ card, hidden, compact, small }: CasinoCardProps) {
   if (!compact)
     return <PlayingCard card={card} hidden={hidden} small={small} />;
   const suit =
@@ -92,7 +118,7 @@ function CasinoCard({
           ? "spades"
           : "clubs";
   const color =
-    card?.suit === "♥" || card?.suit === "♦" ? "#B3444C" : "#153A36";
+    card?.suit === "♥" || card?.suit === "♦" ? "#CB3F5C" : "#162D52";
   return (
     <View
       accessible
@@ -100,7 +126,9 @@ function CasinoCard({
       style={[s.compactCard, hidden && s.compactCardBack]}
     >
       {hidden ? (
-        <Text style={{ color: colors.green, fontSize: 27 }}>♠</Text>
+        <View style={s.compactBackInlay}>
+          <Text style={{ color: colors.blue, fontSize: 24 }}>♠</Text>
+        </View>
       ) : (
         <>
           <Text
@@ -122,6 +150,103 @@ function CasinoCard({
   );
 }
 
+function CasinoCard(props: CasinoCardProps) {
+  const motion = useContext(MotionContext);
+  const entry = props.card && motion?.cards.get(props.card.id);
+  if (!entry || !motion?.busy) return <CasinoCardFace {...props} />;
+  const progress = (start: number, duration: number) =>
+    motion.clock.interpolate({
+      inputRange: [start, start + duration],
+      outputRange: [0, 1],
+      extrapolate: "clamp",
+    });
+  const deal =
+    entry.dealAt === undefined ? null : progress(entry.dealAt, DEAL_MS);
+  const flip =
+    entry.revealAt === undefined ? null : progress(entry.revealAt, FLIP_MS);
+  return (
+    <Animated.View
+      // Announce the settled face once, rather than cards not yet on the table.
+      accessibilityElementsHidden
+      aria-hidden
+      importantForAccessibility="no-hide-descendants"
+      style={
+        deal && {
+          opacity: deal,
+          transform: [
+            {
+              translateX: deal.interpolate({
+                inputRange: [0, 1],
+                outputRange: [42, 0],
+              }),
+            },
+            {
+              translateY: deal.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-32, 0],
+              }),
+            },
+            {
+              rotate: deal.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["9deg", "0deg"],
+              }),
+            },
+            {
+              scale: deal.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.88, 1],
+              }),
+            },
+          ],
+        }
+      }
+    >
+      {flip ? (
+        <View>
+          <Animated.View
+            style={{
+              backfaceVisibility: "hidden",
+              transform: [
+                { perspective: 700 },
+                {
+                  rotateY: flip.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0deg", "180deg"],
+                  }),
+                },
+              ],
+            }}
+          >
+            <CasinoCardFace {...props} hidden />
+          </Animated.View>
+          <Animated.View
+            style={[
+              { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
+              {
+                backfaceVisibility: "hidden",
+                transform: [
+                  { perspective: 700 },
+                  {
+                    rotateY: flip.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["-180deg", "0deg"],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <CasinoCardFace {...props} />
+          </Animated.View>
+        </View>
+      ) : (
+        <CasinoCardFace {...props} />
+      )}
+    </Animated.View>
+  );
+}
+
 function StackedSingleRound({
   table,
   compact,
@@ -129,13 +254,15 @@ function StackedSingleRound({
   table: CasinoState;
   compact: boolean;
 }) {
+  const busy = !!useContext(MotionContext)?.busy;
   const round = table.shoe.round!;
   const hand = round.hands[0];
   const playerValue = handValue(hand.cards);
   const dealerValue = handValue(round.dealer);
   const settled = round.phase === "complete";
-  const resultColor =
-    settled && round.profit > 0
+  const resultColor = busy
+    ? colors.text
+    : settled && round.profit > 0
       ? colors.green
       : settled && round.profit < 0
         ? colors.gold
@@ -147,13 +274,15 @@ function StackedSingleRound({
           <View style={[s.seatHeading, compact && s.shortSeatHeading]}>
             <Text style={s.label}>DEALER</Text>
             <Text style={round.dealerRevealed ? s.total : s.caption}>
-              {round.dealerRevealed
-                ? dealerValue.total > 21
-                  ? `${dealerValue.total} · bust`
-                  : dealerValue.blackjack
-                    ? "Blackjack"
-                    : dealerValue.total
-                : "Hole card down"}
+              {busy
+                ? "Dealing…"
+                : round.dealerRevealed
+                  ? dealerValue.total > 21
+                    ? `${dealerValue.total} · bust`
+                    : dealerValue.blackjack
+                      ? "Blackjack"
+                      : dealerValue.total
+                  : "Hole card down"}
             </Text>
           </View>
           <View style={[s.cards, s.seatCards, compact && { flex: 1 }]}>
@@ -200,12 +329,13 @@ function StackedSingleRound({
               </Text>
             </View>
             <Text style={s.total}>
-              {playerValue.total}
-              {playerValue.total > 21
-                ? " · bust"
-                : playerValue.soft
-                  ? " · soft"
-                  : ""}
+              {busy ? "Dealing…" : playerValue.total}
+              {!busy &&
+                (playerValue.total > 21
+                  ? " · bust"
+                  : playerValue.soft
+                    ? " · soft"
+                    : "")}
             </Text>
           </View>
           <View style={[s.cards, s.seatCards, compact && { flex: 1 }]}>
@@ -238,9 +368,9 @@ function StackedSingleRound({
         accessibilityLiveRegion="polite"
       >
         <Text style={[s.roundTitle, { color: resultColor, fontSize: 17 }]}>
-          {casinoRoundLabel(table)}
+          {busy ? "Cards on the table…" : casinoRoundLabel(table)}
         </Text>
-        {settled && (
+        {settled && !busy && (
           <Text style={[s.resultAmount, { color: resultColor, fontSize: 19 }]}>
             {signedMoney(round.profit)}
           </Text>
@@ -264,7 +394,42 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
     compact || (width < 600 && height < 940 && fontScale <= 1.2);
   const smallCards = height < 940 || width < 600;
   const player = useAudioPlayer(require("../../assets/card.wav"));
-  const table = data.casino;
+  const table = data.casino ?? null;
+  const previousTable = useRef<CasinoState | null>(null);
+  const [finishedMotion, setFinishedMotion] = useState("");
+  const motionPlan = useMemo(
+    () =>
+      cardMotionPlan(previousTable.current, table, data.settings.reducedMotion),
+    [table, data.settings.reducedMotion],
+  );
+  // Every sequence starts at zero on its first render, before layout effects.
+  // Reusing the previous completed clock could flash a newly revealed face.
+  const animationClock = useMemo(() => new Animated.Value(0), [motionPlan]);
+  const animating =
+    motionPlan.duration > 0 && finishedMotion !== motionPlan.token;
+  const motion = useMemo(
+    () => ({ clock: animationClock, cards: motionPlan.cards, busy: animating }),
+    [animationClock, motionPlan, animating],
+  );
+  useLayoutEffect(() => {
+    previousTable.current = table;
+    if (!motionPlan.duration) return;
+    animationClock.setValue(0);
+    let mounted = true;
+    const animation = Animated.timing(animationClock, {
+      toValue: motionPlan.duration,
+      duration: motionPlan.duration,
+      easing: Easing.linear,
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start(({ finished }) => {
+      if (mounted && finished) setFinishedMotion(motionPlan.token);
+    });
+    return () => {
+      mounted = false;
+      animation.stop();
+    };
+  }, [table, motionPlan, animationClock]);
   const needsTable = !table;
   useEffect(() => {
     if (needsTable)
@@ -289,6 +454,7 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
     transition: (value: CasinoState) => CasinoState,
     feedback = false,
   ) {
+    if (animating) return;
     update((previous) => {
       if (!previous.casino) return previous;
       const next = transition(previous.casino);
@@ -323,7 +489,7 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const remainingDecks = Math.round((remainingCards / 52) * 2) / 2;
   // Reveal belongs to this round only; do not persist it with the saved table.
   const countKey = `${table.id}:${table.shoe.shuffleNumber}:${round?.id ?? "ready"}`;
-  const countRevealed = revealedCountKey === countKey;
+  const countRevealed = !animating && revealedCountKey === countKey;
   const exactDecksRemaining = decksRemaining(table.shoe);
   const currentTrueCount =
     exactDecksRemaining > 0
@@ -334,621 +500,673 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const dealtPercent = Math.min(100, (table.shoe.nextCard / totalCards) * 100);
   const activeBet = round?.hands[round.activeHand]?.bet ?? 0;
   const resultColor =
-    !settled || round.profit === 0
+    animating || !settled || round.profit === 0
       ? colors.text
       : round.profit > 0
         ? colors.green
         : colors.gold;
 
   return (
-    <View style={s.screen}>
-      <View style={[s.header, compact && { paddingTop: 4 }]}>
-        <View style={{ flex: 1, minWidth: 150, flexShrink: 1 }}>
-          <Text style={s.eyebrow}>VIRTUAL BLACKJACK</Text>
-          <Text accessibilityRole="header" style={s.title}>
-            The casino table
-          </Text>
-        </View>
-        <View style={s.headerActions}>
-          <Button
-            label="Table"
-            variant="ghost"
-            onPress={() => {
-              setSelectedDecks(deckCount);
-              setShowRules(true);
-            }}
-          />
-          <Button label="Exit" variant="ghost" onPress={onExit} />
-        </View>
-      </View>
-      <View style={[s.wallet, compact && { paddingVertical: 4 }]}>
-        <View style={{ minWidth: 0, flexShrink: 1 }}>
-          <Text style={s.small}>Available</Text>
-          <Text
-            accessibilityLabel={`Available virtual balance ${casinoMoney(available)}`}
-            style={[s.balance, compact && { fontSize: 24 }]}
-          >
-            {casinoMoney(available)}
-          </Text>
-        </View>
-        <View style={s.walletRight}>
-          <Text style={s.small}>
-            On the table{" "}
-            <Text style={s.walletValue}>{casinoMoney(committed)}</Text>
-          </Text>
-          <Text style={s.small}>
-            Balance{" "}
-            <Text style={s.walletValue}>
-              {casinoMoney(table.shoe.bankroll)}
+    <MotionContext.Provider value={motion}>
+      <View style={s.screen}>
+        <View style={[s.header, compact && { paddingTop: 4 }]}>
+          <View style={{ flex: 1, minWidth: 150, flexShrink: 1 }}>
+            <Text style={s.eyebrow}>VIRTUAL BLACKJACK</Text>
+            <Text accessibilityRole="header" style={s.title}>
+              The casino table
             </Text>
-          </Text>
-        </View>
-      </View>
-      <ScrollView
-        style={{ flex: 1, minHeight: 0 }}
-        contentContainerStyle={s.tableScroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View
-          style={[
-            s.felt,
-            smallCards && { gap: 8, paddingVertical: 12 },
-            compact && { gap: 6, paddingVertical: 7 },
-          ]}
-        >
-          <View style={s.feltLine} pointerEvents="none" />
-          {phoneTable && round?.hands.length === 1 ? (
-            <StackedSingleRound table={table} compact={compact} />
-          ) : (
-            <>
-              <View style={s.dealerTitle}>
-                <Text style={s.label}>DEALER</Text>
-                {round?.dealerRevealed && (
-                  <Text style={s.total}>
-                    {handValue(round.dealer).total > 21
-                      ? "Bust"
-                      : handValue(round.dealer).blackjack
-                        ? "Blackjack"
-                        : handValue(round.dealer).total}
-                  </Text>
-                )}
-              </View>
-              <View style={s.cards}>
-                {round ? (
-                  round.dealer.map((card, index) => (
-                    <CasinoCard
-                      key={card.id}
-                      card={card}
-                      compact={compact}
-                      hidden={index > 0 && !round.dealerRevealed}
-                      small={smallCards || round.dealer.length > 3}
-                    />
-                  ))
-                ) : (
-                  <>
-                    <CasinoCard hidden compact={compact} small={smallCards} />
-                    <CasinoCard hidden compact={compact} small={smallCards} />
-                  </>
-                )}
-              </View>
-              <View
-                style={[
-                  s.tableMessage,
-                  compact &&
-                    settled && {
-                      flexDirection: "row",
-                      gap: 9,
-                      marginVertical: 0,
-                    },
-                ]}
-                accessibilityLiveRegion="polite"
-              >
-                <Text style={[s.roundTitle, { color: resultColor }]}>
-                  {casinoRoundLabel(table)}
-                </Text>
-                {settled && (
-                  <Text
-                    style={[
-                      s.resultAmount,
-                      { color: resultColor },
-                      compact && { fontSize: 20 },
-                    ]}
-                  >
-                    {signedMoney(round.profit)}
-                  </Text>
-                )}
-                {!round && (
-                  <Text style={s.feltCaption}>
-                    BLACKJACK PAYS 3:2 · DEALER{" "}
-                    {table.shoe.rules.hitSoft17 ? "HITS" : "STANDS ON"} SOFT 17
-                  </Text>
-                )}
-              </View>
-              {round ? (
-                <View style={s.hands}>
-                  {round.hands.map((hand, index) => {
-                    const value = handValue(hand.cards);
-                    const playing =
-                      round.phase === "playing" && index === round.activeHand;
-                    const status =
-                      hand.result === "blackjack"
-                        ? "Blackjack"
-                        : hand.result === "win"
-                          ? "Win"
-                          : hand.result === "loss"
-                            ? "Loss"
-                            : hand.result === "push"
-                              ? "Push"
-                              : hand.result === "surrender"
-                                ? "Surrendered"
-                                : hand.status === "bust"
-                                  ? "Bust"
-                                  : hand.status === "stood"
-                                    ? "Stood"
-                                    : playing
-                                      ? "Playing"
-                                      : round.phase === "insurance"
-                                        ? "Your hand"
-                                        : "Waiting";
-                    return (
-                      <View
-                        key={hand.id}
-                        style={[
-                          s.hand,
-                          compact && { padding: 6, gap: 4 },
-                          playing && s.activeHand,
-                          round.hands.length === 1 && s.singleHand,
-                        ]}
-                      >
-                        <View style={s.handHeader}>
-                          <Text
-                            style={[
-                              s.handLabel,
-                              playing && { color: colors.green },
-                            ]}
-                          >
-                            {round.hands.length > 1
-                              ? `HAND ${index + 1}`
-                              : "YOUR HAND"}
-                            {playing ? " · ACTIVE" : ""}
-                          </Text>
-                          <Text style={s.betLabel}>
-                            {casinoMoney(hand.bet)}
-                          </Text>
-                        </View>
-                        <View style={s.cards}>
-                          {hand.cards.map((card) => (
-                            <CasinoCard
-                              key={card.id}
-                              card={card}
-                              compact={compact}
-                              small={
-                                smallCards ||
-                                round.hands.length > 1 ||
-                                hand.cards.length > 3
-                              }
-                            />
-                          ))}
-                        </View>
-                        <View style={s.handFooter}>
-                          <Text style={s.total}>
-                            {value.total > 21
-                              ? `${value.total} · bust`
-                              : `${value.total}${value.soft ? " · soft" : ""}`}
-                          </Text>
-                          <Text
-                            style={[
-                              s.handStatus,
-                              hand.profit && hand.profit > 0
-                                ? { color: colors.green }
-                                : undefined,
-                            ]}
-                          >
-                            {status}
-                            {hand.profit !== undefined
-                              ? ` · ${signedMoney(hand.profit)}`
-                              : ""}
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : !compact ? (
-                <View style={s.emptyBet}>
-                  <Text style={s.emptyBetMark}>♠</Text>
-                  <Text style={s.feltCaption}>YOUR SEAT IS READY</Text>
-                </View>
-              ) : null}
-            </>
-          )}
-          {!!round?.insuranceBet && (
-            <Text style={s.insuranceResult}>
-              Insurance {casinoMoney(round.insuranceBet)}
-              {round.phase !== "insurance"
-                ? ` · ${signedMoney(round.insuranceProfit)}`
-                : ""}
-            </Text>
-          )}
-        </View>
-        <View style={s.shoeMeter}>
-          <View style={s.shoeInfoRow}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[s.caption, { textAlign: "left" }]}>
-                {deckCount}-deck shoe · #{table.shoe.shuffleNumber}
-              </Text>
-              <Text style={[s.caption, { textAlign: "left" }]}>
-                About {remainingDecks} {remainingDecks === 1 ? "deck" : "decks"}{" "}
-                left
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                countRevealed
-                  ? `Hide counts. Running count ${table.shoe.runningCount}. True count ${currentTrueCount ?? "unavailable"}.`
-                  : "Show running count and true count"
-              }
-              accessibilityState={{ expanded: countRevealed }}
-              onPress={() =>
-                setRevealedCountKey(countRevealed ? null : countKey)
-              }
-              style={({ pressed }) => [
-                s.countPeek,
-                countRevealed && { borderColor: colors.green },
-                { opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Text style={s.countValue}>
-                {countRevealed
-                  ? `Running ${countLabel(table.shoe.runningCount)} · True ${countLabel(currentTrueCount)}`
-                  : "Running ••• · True •••"}
-              </Text>
-              <Text style={s.caption}>
-                {countRevealed ? "Tap to hide counts" : "Tap to reveal counts"}
-              </Text>
-            </Pressable>
           </View>
-          <View
-            accessible
-            accessibilityRole="progressbar"
-            accessibilityLabel={`Cards dealt from the ${deckCount}-deck shoe`}
-            accessibilityValue={{
-              min: 0,
-              max: totalCards,
-              now: table.shoe.nextCard,
-              text: `${table.shoe.nextCard} dealt; ${remainingCards} of ${totalCards} cards remain`,
-            }}
-            style={s.shoeTrack}
-          >
-            <View style={[s.shoeFill, { width: `${dealtPercent}%` }]} />
+          <View style={s.headerActions}>
+            <Button
+              label="Table"
+              duringAnimation
+              variant="ghost"
+              onPress={() => {
+                setSelectedDecks(deckCount);
+                setShowRules(true);
+              }}
+            />
+            <Button
+              label="Exit"
+              variant="ghost"
+              onPress={onExit}
+              duringAnimation
+            />
           </View>
-          {!!shoeNotice && (
+        </View>
+        <View style={[s.wallet, compact && { paddingVertical: 4 }]}>
+          <View style={{ minWidth: 0, flexShrink: 1 }}>
+            <Text style={s.small}>Available</Text>
             <Text
-              accessibilityLiveRegion="polite"
-              style={[s.caption, { color: colors.green }]}
+              accessibilityLabel={
+                animating
+                  ? "Virtual balance updates after cards finish dealing"
+                  : `Available virtual balance ${casinoMoney(available)}`
+              }
+              style={[s.balance, compact && { fontSize: 24 }]}
             >
-              {shoeNotice}
+              {animating ? "•••" : casinoMoney(available)}
             </Text>
-          )}
-        </View>
-        {storageError && (
-          <Text accessibilityLiveRegion="polite" style={s.storageWarning}>
-            {storageError}
-          </Text>
-        )}
-      </ScrollView>
-      <View
-        style={[
-          s.controls,
-          compact && { paddingTop: 7, paddingBottom: 8, gap: 6 },
-        ]}
-      >
-        {round?.phase === "insurance" ? (
-          <>
-            <View style={s.controlHeading}>
-              <Text style={s.controlTitle}>Insurance</Text>
-              <Text style={s.small}>
-                Optional {casinoMoney(round.hands[0].bet / 2)} · pays 2:1
+          </View>
+          <View style={s.walletRight}>
+            <Text style={s.small}>
+              On the table{" "}
+              <Text style={s.walletValue}>
+                {animating ? "•••" : casinoMoney(committed)}
               </Text>
-            </View>
-            <View style={s.actionRow}>
-              <Button
-                label="No insurance"
-                onPress={() =>
-                  change(
-                    (value) => casinoInsurance(value, false, revision),
-                    true,
-                  )
-                }
-                style={{ flex: 1 }}
-              />
-              <Button
-                label={`Insure ${casinoMoney(round.hands[0].bet / 2)}`}
-                variant="secondary"
-                disabled={!casinoCanInsure(table)}
-                onPress={() =>
-                  change(
-                    (value) => casinoInsurance(value, true, revision),
-                    true,
-                  )
-                }
-                style={{ flex: 1 }}
-              />
-            </View>
-            {!casinoCanInsure(table) && (
-              <Text style={s.caption}>
-                Your available balance does not cover insurance.
+            </Text>
+            <Text style={s.small}>
+              Balance{" "}
+              <Text style={s.walletValue}>
+                {animating ? "•••" : casinoMoney(table.shoe.bankroll)}
+              </Text>
+            </Text>
+          </View>
+        </View>
+        <ScrollView
+          style={{ flex: 1, minHeight: 0 }}
+          contentContainerStyle={s.tableScroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          <LinearGradient
+            colors={["#17396A", "#102548", "#101D39"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              s.felt,
+              smallCards && { gap: 8, paddingVertical: 12 },
+              compact && { gap: 6, paddingVertical: 7 },
+            ]}
+          >
+            <View style={s.feltLine} pointerEvents="none" />
+            <View style={s.tableGlow} pointerEvents="none" />
+            {phoneTable && round?.hands.length === 1 ? (
+              <StackedSingleRound table={table} compact={compact} />
+            ) : (
+              <>
+                <View style={s.dealerTitle}>
+                  <Text style={s.label}>DEALER</Text>
+                  {round?.dealerRevealed && !animating && (
+                    <Text style={s.total}>
+                      {handValue(round.dealer).total > 21
+                        ? "Bust"
+                        : handValue(round.dealer).blackjack
+                          ? "Blackjack"
+                          : handValue(round.dealer).total}
+                    </Text>
+                  )}
+                </View>
+                <View style={s.cards}>
+                  {round ? (
+                    round.dealer.map((card, index) => (
+                      <CasinoCard
+                        key={card.id}
+                        card={card}
+                        compact={compact}
+                        hidden={index > 0 && !round.dealerRevealed}
+                        small={smallCards || round.dealer.length > 3}
+                      />
+                    ))
+                  ) : (
+                    <>
+                      <CasinoCard hidden compact={compact} small={smallCards} />
+                      <CasinoCard hidden compact={compact} small={smallCards} />
+                    </>
+                  )}
+                </View>
+                <View
+                  style={[
+                    s.tableMessage,
+                    compact &&
+                      settled && {
+                        flexDirection: "row",
+                        gap: 9,
+                        marginVertical: 0,
+                      },
+                  ]}
+                  accessibilityLiveRegion="polite"
+                >
+                  <Text style={[s.roundTitle, { color: resultColor }]}>
+                    {animating
+                      ? "Cards on the table…"
+                      : casinoRoundLabel(table)}
+                  </Text>
+                  {settled && !animating && (
+                    <Text
+                      style={[
+                        s.resultAmount,
+                        { color: resultColor },
+                        compact && { fontSize: 20 },
+                      ]}
+                    >
+                      {signedMoney(round.profit)}
+                    </Text>
+                  )}
+                  {!round && (
+                    <Text style={s.feltCaption}>
+                      BLACKJACK PAYS 3:2 · DEALER{" "}
+                      {table.shoe.rules.hitSoft17 ? "HITS" : "STANDS ON"} SOFT
+                      17
+                    </Text>
+                  )}
+                </View>
+                {round ? (
+                  <View style={s.hands}>
+                    {round.hands.map((hand, index) => {
+                      const value = handValue(hand.cards);
+                      const playing =
+                        round.phase === "playing" && index === round.activeHand;
+                      const status =
+                        hand.result === "blackjack"
+                          ? "Blackjack"
+                          : hand.result === "win"
+                            ? "Win"
+                            : hand.result === "loss"
+                              ? "Loss"
+                              : hand.result === "push"
+                                ? "Push"
+                                : hand.result === "surrender"
+                                  ? "Surrendered"
+                                  : hand.status === "bust"
+                                    ? "Bust"
+                                    : hand.status === "stood"
+                                      ? "Stood"
+                                      : playing
+                                        ? "Playing"
+                                        : round.phase === "insurance"
+                                          ? "Your hand"
+                                          : "Waiting";
+                      return (
+                        <View
+                          key={hand.id}
+                          style={[
+                            s.hand,
+                            compact && { padding: 6, gap: 4 },
+                            playing && s.activeHand,
+                            round.hands.length === 1 && s.singleHand,
+                          ]}
+                        >
+                          <View style={s.handHeader}>
+                            <Text
+                              style={[
+                                s.handLabel,
+                                playing && { color: colors.green },
+                              ]}
+                            >
+                              {round.hands.length > 1
+                                ? `HAND ${index + 1}`
+                                : "YOUR HAND"}
+                              {playing && !animating ? " · ACTIVE" : ""}
+                            </Text>
+                            <Text style={s.betLabel}>
+                              {casinoMoney(hand.bet)}
+                            </Text>
+                          </View>
+                          <View style={s.cards}>
+                            {hand.cards.map((card) => (
+                              <CasinoCard
+                                key={card.id}
+                                card={card}
+                                compact={compact}
+                                small={
+                                  smallCards ||
+                                  round.hands.length > 1 ||
+                                  hand.cards.length > 3
+                                }
+                              />
+                            ))}
+                          </View>
+                          <View style={s.handFooter}>
+                            <Text style={s.total}>
+                              {animating
+                                ? "Dealing…"
+                                : value.total > 21
+                                  ? `${value.total} · bust`
+                                  : `${value.total}${value.soft ? " · soft" : ""}`}
+                            </Text>
+                            <Text
+                              style={[
+                                s.handStatus,
+                                hand.profit && hand.profit > 0
+                                  ? { color: colors.green }
+                                  : undefined,
+                              ]}
+                            >
+                              {!animating && status}
+                              {!animating && hand.profit !== undefined
+                                ? ` · ${signedMoney(hand.profit)}`
+                                : ""}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : !compact ? (
+                  <View style={s.emptyBet}>
+                    <Text style={s.emptyBetMark}>♠</Text>
+                    <Text style={s.feltCaption}>YOUR SEAT IS READY</Text>
+                  </View>
+                ) : null}
+              </>
+            )}
+            {!!round?.insuranceBet && !animating && (
+              <Text style={s.insuranceResult}>
+                Insurance {casinoMoney(round.insuranceBet)}
+                {round.phase !== "insurance"
+                  ? ` · ${signedMoney(round.insuranceProfit)}`
+                  : ""}
               </Text>
             )}
-          </>
-        ) : active ? (
-          <>
-            <View style={s.controlHeading}>
-              <Text style={s.controlTitle}>
-                {round!.hands.length > 1
-                  ? `Playing hand ${round!.activeHand + 1}`
-                  : "Your move"}
-              </Text>
-              <Text style={s.small}>Bet {casinoMoney(activeBet)}</Text>
+          </LinearGradient>
+          <View style={s.shoeMeter}>
+            <View style={s.shoeInfoRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[s.caption, { textAlign: "left" }]}>
+                  {deckCount}-deck shoe · #{table.shoe.shuffleNumber}
+                </Text>
+                <Text style={[s.caption, { textAlign: "left" }]}>
+                  About {remainingDecks}{" "}
+                  {remainingDecks === 1 ? "deck" : "decks"} left
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  countRevealed
+                    ? `Hide counts. Running count ${table.shoe.runningCount}. True count ${currentTrueCount ?? "unavailable"}.`
+                    : "Show running count and true count"
+                }
+                accessibilityState={{
+                  expanded: countRevealed,
+                  disabled: animating,
+                }}
+                disabled={animating}
+                onPress={() =>
+                  setRevealedCountKey(countRevealed ? null : countKey)
+                }
+                style={({ pressed }) => [
+                  s.countPeek,
+                  countRevealed && { borderColor: colors.green },
+                  { opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <Text style={s.countValue}>
+                  {countRevealed
+                    ? `Running ${countLabel(table.shoe.runningCount)} · True ${countLabel(currentTrueCount)}`
+                    : "Running ••• · True •••"}
+                </Text>
+                <Text style={s.caption}>
+                  {animating
+                    ? "Dealing cards…"
+                    : countRevealed
+                      ? "Tap to hide counts"
+                      : "Tap to reveal counts"}
+                </Text>
+              </Pressable>
             </View>
-            <View style={s.actionRow}>
-              {ACTIONS.slice(0, 2).map((item) => (
+            <View
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={`Cards dealt from the ${deckCount}-deck shoe`}
+              accessibilityValue={{
+                min: 0,
+                max: totalCards,
+                now: table.shoe.nextCard,
+                text: `${table.shoe.nextCard} dealt; ${remainingCards} of ${totalCards} cards remain`,
+              }}
+              style={s.shoeTrack}
+            >
+              <View style={[s.shoeFill, { width: `${dealtPercent}%` }]} />
+            </View>
+            {!!shoeNotice && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[s.caption, { color: colors.green }]}
+              >
+                {shoeNotice}
+              </Text>
+            )}
+          </View>
+          {storageError && (
+            <Text accessibilityLiveRegion="polite" style={s.storageWarning}>
+              {storageError}
+            </Text>
+          )}
+        </ScrollView>
+        <View
+          style={[
+            s.controls,
+            compact && { paddingTop: 7, paddingBottom: 8, gap: 6 },
+          ]}
+        >
+          {round?.phase === "insurance" ? (
+            <>
+              <View style={s.controlHeading}>
+                <Text style={s.controlTitle}>Insurance</Text>
+                <Text style={s.small}>
+                  Optional {casinoMoney(round.hands[0].bet / 2)} · pays 2:1
+                </Text>
+              </View>
+              <View style={s.actionRow}>
                 <Button
-                  key={item.action}
-                  label={item.label}
-                  disabled={!legal.includes(item.action)}
-                  variant={item.action === "hit" ? "primary" : "secondary"}
+                  label="No insurance"
                   onPress={() =>
                     change(
-                      (value) => casinoAct(value, item.action, revision),
+                      (value) => casinoInsurance(value, false, revision),
                       true,
                     )
                   }
                   style={{ flex: 1 }}
                 />
-              ))}
-            </View>
-            <View style={s.actionRow}>
-              {ACTIONS.slice(2).map((item) => (
                 <Button
-                  key={item.action}
-                  label={item.label}
-                  disabled={!legal.includes(item.action)}
+                  label={`Insure ${casinoMoney(round.hands[0].bet / 2)}`}
                   variant="secondary"
+                  disabled={!casinoCanInsure(table)}
                   onPress={() =>
                     change(
-                      (value) => casinoAct(value, item.action, revision),
+                      (value) => casinoInsurance(value, true, revision),
                       true,
                     )
                   }
-                  style={{ flex: 1, paddingHorizontal: 8 }}
+                  style={{ flex: 1 }}
                 />
-              ))}
-            </View>
-            {available < activeBet &&
-              round!.hands[round!.activeHand].cards.length === 2 && (
+              </View>
+              {!casinoCanInsure(table) && (
                 <Text style={s.caption}>
-                  Double and split need {casinoMoney(activeBet)} in available
-                  chips.
+                  Your available balance does not cover insurance.
                 </Text>
               )}
-          </>
-        ) : (
-          <>
-            <View style={s.controlHeading}>
-              <View style={s.betHeading}>
-                <Text style={s.small}>Your wager</Text>
-                <Text style={s.wager}>{casinoMoney(table.selectedBet)}</Text>
+            </>
+          ) : active ? (
+            <>
+              <View style={s.controlHeading}>
+                <Text style={s.controlTitle}>
+                  {animating
+                    ? "Dealing cards…"
+                    : round!.hands.length > 1
+                      ? `Playing hand ${round!.activeHand + 1}`
+                      : "Your move"}
+                </Text>
+                <Text style={s.small}>Bet {casinoMoney(activeBet)}</Text>
               </View>
-              <View style={s.headerActions}>
-                <Button
-                  label="Clear"
-                  variant="ghost"
-                  disabled={table.selectedBet === 0}
-                  onPress={() => change((value) => casinoSetBet(value, 0))}
-                />
-                <Button
-                  label="Repeat bet"
-                  variant="ghost"
-                  disabled={
-                    table.lastBet > available ||
-                    table.selectedBet === table.lastBet
-                  }
-                  onPress={() => change(casinoRepeatBet)}
-                />
-              </View>
-            </View>
-            <View style={s.chips}>
-              {CASINO_CHIPS.map((chip, index) => {
-                const disabled =
-                  table.selectedBet + chip >
-                  Math.min(CASINO_MAX_BET, available);
-                return (
-                  <Pressable
-                    key={chip}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${casinoMoney(chip)} virtual chips`}
-                    accessibilityState={{ disabled }}
-                    disabled={disabled}
+              <View style={s.actionRow}>
+                {ACTIONS.slice(0, 2).map((item) => (
+                  <Button
+                    key={item.action}
+                    label={item.label}
+                    disabled={!legal.includes(item.action)}
+                    variant={item.action === "hit" ? "primary" : "secondary"}
                     onPress={() =>
-                      change((value) => casinoAddChip(value, chip), true)
+                      change(
+                        (value) => casinoAct(value, item.action, revision),
+                        true,
+                      )
                     }
-                    style={({ pressed }) => [
-                      s.chip,
-                      compact && { width: 40, height: 40, borderRadius: 20 },
-                      {
-                        borderColor: [
-                          colors.text,
-                          colors.green,
-                          colors.gold,
-                          "#96ADD9",
-                          "#B597C4",
-                        ][index],
-                        opacity: disabled ? 0.35 : pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Text style={s.chipValue}>{casinoMoney(chip)}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {casinoCanRefill(table) ? (
-              <Button
-                label={`Add ${casinoMoney(CASINO_REFILL)} virtual chips`}
-                onPress={() =>
-                  change((value) => casinoRefill(value, revision), true)
-                }
-              />
-            ) : (
-              <Button
-                label={
-                  casinoCanDeal(table)
-                    ? `${settled ? "Deal next hand" : "Deal"} · ${casinoMoney(table.selectedBet)}`
-                    : table.selectedBet > available
-                      ? "Lower your wager to continue"
-                      : "Choose your chips to deal"
-                }
-                disabled={!casinoCanDeal(table)}
-                onPress={() => {
-                  setShoeNotice("");
-                  change((value) => casinoDeal(value, revision), true);
-                }}
-              />
-            )}
-          </>
-        )}
-      </View>
-      <DetailSheet
-        visible={showRules}
-        title="Your table"
-        reducedMotion={data.settings.reducedMotion}
-        onClose={() => setShowRules(false)}
-      >
-        <View style={s.sessionPanel}>
-          <Text accessibilityRole="header" style={s.controlTitle}>
-            Shoe & new session
-          </Text>
-          <Body>Choose how many decks go into your next fresh session.</Body>
-          <View style={s.deckOptions}>
-            {SHOE_DECK_COUNTS.map((decks) => (
-              <Pressable
-                key={decks}
-                accessibilityRole="button"
-                accessibilityLabel={`${decks} ${decks === 1 ? "deck" : "decks"} for a fresh session`}
-                accessibilityState={{ selected: selectedDecks === decks }}
-                onPress={() => setSelectedDecks(decks)}
-                style={({ pressed }) => [
-                  s.deckOption,
-                  selectedDecks === decks && s.deckSelected,
-                  { opacity: pressed ? 0.7 : 1 },
-                ]}
-              >
-                <Text
-                  style={[
-                    s.deckNumber,
-                    selectedDecks === decks && { color: colors.green },
+                    style={{ flex: 1 }}
+                  />
+                ))}
+              </View>
+              <View style={s.actionRow}>
+                {ACTIONS.slice(2).map((item) => (
+                  <Button
+                    key={item.action}
+                    label={item.label}
+                    disabled={!legal.includes(item.action)}
+                    variant="secondary"
+                    onPress={() =>
+                      change(
+                        (value) => casinoAct(value, item.action, revision),
+                        true,
+                      )
+                    }
+                    style={{ flex: 1, paddingHorizontal: 8 }}
+                  />
+                ))}
+              </View>
+              {available < activeBet &&
+                round!.hands[round!.activeHand].cards.length === 2 && (
+                  <Text style={s.caption}>
+                    Double and split need {casinoMoney(activeBet)} in available
+                    chips.
+                  </Text>
+                )}
+            </>
+          ) : (
+            <>
+              <View style={s.controlHeading}>
+                <View style={s.betHeading}>
+                  <Text style={s.small}>Your wager</Text>
+                  <Text style={s.wager}>{casinoMoney(table.selectedBet)}</Text>
+                </View>
+                <View style={s.headerActions}>
+                  <Button
+                    label="Clear"
+                    variant="ghost"
+                    disabled={table.selectedBet === 0}
+                    onPress={() => change((value) => casinoSetBet(value, 0))}
+                  />
+                  <Button
+                    label="Repeat bet"
+                    variant="ghost"
+                    disabled={
+                      table.lastBet > available ||
+                      table.selectedBet === table.lastBet
+                    }
+                    onPress={() => change(casinoRepeatBet)}
+                  />
+                </View>
+              </View>
+              <View style={s.chips}>
+                {CASINO_CHIPS.map((chip, index) => {
+                  const disabled =
+                    animating ||
+                    table.selectedBet + chip >
+                      Math.min(CASINO_MAX_BET, available);
+                  return (
+                    <Pressable
+                      key={chip}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add ${casinoMoney(chip)} virtual chips`}
+                      accessibilityState={{ disabled }}
+                      disabled={disabled}
+                      onPress={() =>
+                        change((value) => casinoAddChip(value, chip), true)
+                      }
+                      style={({ pressed }) => [
+                        s.chip,
+                        compact && { width: 40, height: 40, borderRadius: 20 },
+                        {
+                          borderColor: [
+                            colors.text,
+                            colors.blue,
+                            colors.red,
+                            "#A7C9FF",
+                            "#FFABBA",
+                          ][index],
+                          backgroundColor: [
+                            "#1B2C49",
+                            "#1C3E70",
+                            "#622B44",
+                            "#2C4774",
+                            "#7A354F",
+                          ][index],
+                          opacity: disabled ? 0.35 : pressed ? 0.7 : 1,
+                        },
+                      ]}
+                    >
+                      <View style={s.chipInner}>
+                        <Text style={s.chipValue}>{casinoMoney(chip)}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {casinoCanRefill(table) ? (
+                <Button
+                  label={`Add ${casinoMoney(CASINO_REFILL)} virtual chips`}
+                  onPress={() =>
+                    change((value) => casinoRefill(value, revision), true)
+                  }
+                />
+              ) : (
+                <Button
+                  label={
+                    animating
+                      ? "Finishing the hand…"
+                      : casinoCanDeal(table)
+                        ? `${settled ? "Deal next hand" : "Deal"} · ${casinoMoney(table.selectedBet)}`
+                        : table.selectedBet > available
+                          ? "Lower your wager to continue"
+                          : "Choose your chips to deal"
+                  }
+                  disabled={!casinoCanDeal(table)}
+                  onPress={() => {
+                    setShoeNotice("");
+                    change((value) => casinoDeal(value, revision), true);
+                  }}
+                />
+              )}
+            </>
+          )}
+        </View>
+        <DetailSheet
+          visible={showRules}
+          title="Your table"
+          reducedMotion={data.settings.reducedMotion}
+          onClose={() => setShowRules(false)}
+        >
+          <View style={s.sessionPanel}>
+            <Text accessibilityRole="header" style={s.controlTitle}>
+              Shoe & new session
+            </Text>
+            <Body>Choose how many decks go into your next fresh session.</Body>
+            <View style={s.deckOptions}>
+              {SHOE_DECK_COUNTS.map((decks) => (
+                <Pressable
+                  key={decks}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${decks} ${decks === 1 ? "deck" : "decks"} for a fresh session`}
+                  accessibilityState={{ selected: selectedDecks === decks }}
+                  onPress={() => setSelectedDecks(decks)}
+                  style={({ pressed }) => [
+                    s.deckOption,
+                    selectedDecks === decks && s.deckSelected,
+                    { opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
-                  {decks}
-                </Text>
-                <Text style={s.caption}>{decks === 1 ? "deck" : "decks"}</Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={[
+                      s.deckNumber,
+                      selectedDecks === decks && { color: colors.green },
+                    ]}
+                  >
+                    {decks}
+                  </Text>
+                  <Text style={s.caption}>
+                    {decks === 1 ? "deck" : "decks"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Body>
+              Start with a freshly shuffled shoe and{" "}
+              {casinoMoney(CASINO_REFILL)} in virtual chips. The count, discard
+              tray, completed rounds, and table net return to zero. Your table
+              rules stay the same.
+            </Body>
+            {active && (
+              <Text
+                style={{ color: colors.gold, fontSize: 14, lineHeight: 20 }}
+              >
+                Finish the current hand first. Your wagers stay on the table
+                until it settles.
+              </Text>
+            )}
+            <Button
+              label="Start fresh session"
+              disabled={active}
+              onPress={() => {
+                const expectedId = table.id;
+                const expectedRevision = revision;
+                const decks = selectedDecks;
+                const now = Date.now();
+                const seed = Math.floor(Math.random() * 0x7fffffff);
+                change(
+                  (value) =>
+                    value.id !== expectedId
+                      ? value
+                      : casinoNewSession(
+                          value,
+                          decks,
+                          expectedRevision,
+                          seed,
+                          now,
+                        ),
+                  true,
+                );
+                setShowRules(false);
+              }}
+            />
           </View>
+          <Text accessibilityRole="header" style={s.controlTitle}>
+            Current shoe
+          </Text>
           <Body>
-            Start with a freshly shuffled shoe and {casinoMoney(CASINO_REFILL)}{" "}
-            in virtual chips. The count, discard tray, completed rounds, and
-            table net return to zero. Your table rules stay the same.
+            {deckCount} {deckCount === 1 ? "deck" : "decks"} · shoe{" "}
+            {table.shoe.shuffleNumber} · {table.shoe.nextCard} cards dealt ·{" "}
+            {remainingCards} of {totalCards} cards remaining.
           </Body>
-          {active && (
-            <Text style={{ color: colors.gold, fontSize: 14, lineHeight: 20 }}>
-              Finish the current hand first. Your wagers stay on the table until
-              it settles.
-            </Text>
-          )}
-          <Button
-            label="Start fresh session"
-            disabled={active}
-            onPress={() => {
-              const expectedId = table.id;
-              const expectedRevision = revision;
-              const decks = selectedDecks;
-              const now = Date.now();
-              const seed = Math.floor(Math.random() * 0x7fffffff);
-              change(
-                (value) =>
-                  value.id !== expectedId
-                    ? value
-                    : casinoNewSession(
-                        value,
-                        decks,
-                        expectedRevision,
-                        seed,
-                        now,
-                      ),
-                true,
-              );
-              setShowRules(false);
-            }}
-          />
-        </View>
-        <Text accessibilityRole="header" style={s.controlTitle}>
-          Current shoe
-        </Text>
-        <Body>
-          {deckCount} {deckCount === 1 ? "deck" : "decks"} · shoe{" "}
-          {table.shoe.shuffleNumber} · {table.shoe.nextCard} cards dealt ·{" "}
-          {remainingCards} of {totalCards} cards remaining.
-        </Body>
-        <Body>
-          The table shuffles between rounds at the 75% cut card, or earlier when
-          too few cards remain to safely finish a full round. The shoe number
-          increases after each automatic shuffle. Small shoes can reach the
-          safety limit sooner.
-        </Body>
-        <Text accessibilityRole="header" style={s.controlTitle}>
-          Table rules
-        </Text>
-        <Body>
-          Tap the hidden counts beside the shoe meter whenever you want to check
-          yourself. Running count includes all exposed cards since the shuffle,
-          never the dealer’s face-down card. True count divides by the exact
-          undealt decks and rounds down, including negative values. Counts
-          update while revealed and hide again for each new round.
-        </Body>
-        <Body>
-          {deckCount} {deckCount === 1 ? "deck" : "decks"} · blackjack pays 3:2
-          · dealer {table.shoe.rules.hitSoft17 ? "hits" : "stands on"} soft 17 ·
-          dealer checks for blackjack.
-        </Body>
-        <Body>
-          Double on the first two cards, including after splitting. Split up to
-          four hands. Split aces get one extra card each and cannot be resplit.
-          A split 21 pays 1:1.
-        </Body>
-        <Body>
-          {table.shoe.rules.surrender
-            ? "Late surrender is available on the original two-card hand after the dealer checks."
-            : "Surrender is unavailable at this table."}
-        </Body>
-        <Body>
-          Wagers are reserved until the round settles. Available chips exclude
-          every hand’s stake and insurance. The balance updates once at
-          settlement.
-        </Body>
-        <Body>
-          This table uses virtual money only. There are no purchases, deposits
-          of real money, or cashouts. Wagers range from{" "}
-          {casinoMoney(CASINO_MIN_BET)} to {casinoMoney(CASINO_MAX_BET)}.
-        </Body>
-        <View style={s.controlHeading}>
-          <Body>Completed rounds {table.shoe.rounds}</Body>
-          <Body>Table net {signedMoney(casinoNet(table))}</Body>
-        </View>
-      </DetailSheet>
-    </View>
+          <Body>
+            The table shuffles between rounds at the 75% cut card, or earlier
+            when too few cards remain to safely finish a full round. The shoe
+            number increases after each automatic shuffle. Small shoes can reach
+            the safety limit sooner.
+          </Body>
+          <Text accessibilityRole="header" style={s.controlTitle}>
+            Table rules
+          </Text>
+          <Body>
+            Tap the hidden counts beside the shoe meter whenever you want to
+            check yourself. Running count includes all exposed cards since the
+            shuffle, never the dealer’s face-down card. True count divides by
+            the exact undealt decks and rounds down, including negative values.
+            Counts update while revealed and hide again for each new round.
+          </Body>
+          <Body>
+            {deckCount} {deckCount === 1 ? "deck" : "decks"} · blackjack pays
+            3:2 · dealer {table.shoe.rules.hitSoft17 ? "hits" : "stands on"}{" "}
+            soft 17 · dealer checks for blackjack.
+          </Body>
+          <Body>
+            Double on the first two cards, including after splitting. Split up
+            to four hands. Split aces get one extra card each and cannot be
+            resplit. A split 21 pays 1:1.
+          </Body>
+          <Body>
+            {table.shoe.rules.surrender
+              ? "Late surrender is available on the original two-card hand after the dealer checks."
+              : "Surrender is unavailable at this table."}
+          </Body>
+          <Body>
+            Wagers are reserved until the round settles. Available chips exclude
+            every hand’s stake and insurance. The balance updates once at
+            settlement.
+          </Body>
+          <Body>
+            This table uses virtual money only. There are no purchases, deposits
+            of real money, or cashouts. Wagers range from{" "}
+            {casinoMoney(CASINO_MIN_BET)} to {casinoMoney(CASINO_MAX_BET)}.
+          </Body>
+          <View style={s.controlHeading}>
+            <Body>Completed rounds {animating ? "…" : table.shoe.rounds}</Body>
+            <Body>
+              Table net {animating ? "…" : signedMoney(casinoNet(table))}
+            </Body>
+          </View>
+        </DetailSheet>
+      </View>
+    </MotionContext.Provider>
   );
 }
 
@@ -1003,7 +1221,10 @@ const s = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.surface,
   },
-  deckSelected: { borderColor: colors.green, backgroundColor: "#163A34" },
+  deckSelected: {
+    borderColor: colors.blue,
+    backgroundColor: colors.accentSoft,
+  },
   deckNumber: { color: colors.text, fontSize: 20, fontWeight: "600" },
   screen: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
   compactCard: {
@@ -1015,11 +1236,23 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.ivory,
+    borderWidth: 1,
+    borderColor: "#D9E5FA",
   },
   compactCardBack: {
     borderWidth: 1,
-    borderColor: "#68907B",
-    backgroundColor: "#1C4943",
+    borderColor: "#759BDD",
+    backgroundColor: "#193866",
+    padding: 4,
+  },
+  compactBackInlay: {
+    flex: 1,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#77A9FF70",
+    borderRadius: 3,
+    alignItems: "center",
+    justifyContent: "center",
   },
   stackedSeats: {
     gap: 8,
@@ -1029,13 +1262,13 @@ const s = StyleSheet.create({
     width: "100%",
     minWidth: 0,
     borderWidth: 1,
-    borderColor: "#446C59",
+    borderColor: "#5476A255",
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 6,
     gap: 4,
     alignItems: "center",
-    backgroundColor: "#082C2670",
+    backgroundColor: "#07142F66",
   },
   shortSeat: {
     flexDirection: "row",
@@ -1088,7 +1321,7 @@ const s = StyleSheet.create({
     gap: 0,
   },
   eyebrow: {
-    color: colors.green,
+    color: colors.red,
     fontSize: 9,
     letterSpacing: 1.5,
     fontWeight: "700",
@@ -1116,7 +1349,7 @@ const s = StyleSheet.create({
   },
   walletValue: { color: colors.text, fontWeight: "600" },
   balance: {
-    color: colors.text,
+    color: colors.blue,
     fontSize: 29,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
@@ -1131,12 +1364,12 @@ const s = StyleSheet.create({
   felt: {
     width: "100%",
     maxWidth: 920,
-    backgroundColor: "#103F34",
+    backgroundColor: colors.table,
     borderRadius: 26,
     paddingHorizontal: 12,
     paddingVertical: 15,
     borderWidth: 1,
-    borderColor: "#366957",
+    borderColor: colors.tableBorder,
     gap: 10,
     alignItems: "center",
   },
@@ -1147,12 +1380,20 @@ const s = StyleSheet.create({
     left: 7,
     right: 7,
     borderWidth: 1,
-    borderColor: "#8EB59D33",
+    borderColor: "#81ABED2E",
     borderRadius: 21,
+  },
+  tableGlow: {
+    position: "absolute",
+    top: 0,
+    width: 94,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: colors.red,
   },
   dealerTitle: { flexDirection: "row", alignItems: "center", gap: 10 },
   label: {
-    color: "#BFCEC0",
+    color: "#BDCCE7",
     fontSize: 10,
     letterSpacing: 2,
     fontWeight: "700",
@@ -1176,7 +1417,7 @@ const s = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   feltCaption: {
-    color: "#A6BBAA",
+    color: "#A9BEDF",
     fontSize: 9,
     letterSpacing: 1,
     textAlign: "center",
@@ -1195,12 +1436,12 @@ const s = StyleSheet.create({
     flexBasis: 140,
     padding: 9,
     borderWidth: 1,
-    borderColor: "#446C59",
+    borderColor: "#5476A255",
     borderRadius: 13,
     gap: 9,
-    backgroundColor: "#082C2670",
+    backgroundColor: "#07142F66",
   },
-  activeHand: { borderColor: colors.green, backgroundColor: "#1D5242" },
+  activeHand: { borderColor: colors.blue, backgroundColor: "#193B6970" },
   singleHand: { flexGrow: 0, width: "100%", maxWidth: 440, flexBasis: "auto" },
   handHeader: {
     flexDirection: "row",
@@ -1210,7 +1451,7 @@ const s = StyleSheet.create({
     flexWrap: "wrap",
   },
   handLabel: {
-    color: "#C5D2C6",
+    color: "#CBD9F0",
     fontSize: 9,
     fontWeight: "700",
     letterSpacing: 0.6,
@@ -1224,14 +1465,14 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   total: { color: colors.text, fontSize: 15, fontWeight: "700" },
-  handStatus: { color: "#C5D2C6", fontSize: 11, fontWeight: "600" },
+  handStatus: { color: "#CBD9F0", fontSize: 11, fontWeight: "600" },
   emptyBet: {
     minHeight: 110,
     justifyContent: "center",
     alignItems: "center",
     gap: 7,
   },
-  emptyBetMark: { color: "#73A487", fontSize: 54 },
+  emptyBetMark: { color: "#77A9FF88", fontSize: 54 },
   insuranceResult: { color: colors.gold, fontSize: 12 },
   caption: {
     color: colors.muted,
@@ -1246,6 +1487,8 @@ const s = StyleSheet.create({
     paddingBottom: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     gap: 9,
     backgroundColor: colors.surface,
   },
@@ -1272,4 +1515,13 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   chipValue: { color: colors.text, fontWeight: "700", fontSize: 12 },
+  chipInner: {
+    width: "86%",
+    height: "86%",
+    borderWidth: 1,
+    borderColor: "#E0EAFF33",
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

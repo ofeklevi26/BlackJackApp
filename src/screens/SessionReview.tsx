@@ -22,12 +22,14 @@ import {
   Stat,
 } from "../ui/components";
 import { colors } from "../ui/theme";
+import SessionCelebration from "../ui/SessionCelebration";
 
 type Props = {
   session: Session;
   onReplay: (decision: Decision) => void;
   onPractice: (topic: string) => void;
   onClose?: () => void;
+  celebrate?: boolean;
 };
 const titleCase = (text: string) =>
   text.replace(/(^|[- ])\w/g, (value) => value.replace("-", " ").toUpperCase());
@@ -184,13 +186,25 @@ export default function SessionReview({
   onReplay,
   onPractice,
   onClose,
+  celebrate = false,
 }: Props) {
+  const { data } = useStore();
   const [filter, setFilter] = useState<"all" | "mistakes">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [visible, setVisible] = useState(10);
   const stats = summarize(session.decisions);
   const count = session.countResult;
   const countStats = summarizeCounts(count?.answers ?? []);
+  const scored = count ? countStats : stats;
+  const correctAnswers = count
+    ? count.answers.filter((answer) => answer.submitted === answer.expected)
+        .length
+    : session.decisions.filter(
+        (decision) => !decision.replay && decision.correct,
+      ).length;
+  const replayCount = session.decisions.filter(
+    (decision) => decision.replay,
+  ).length;
   const mistakes = session.decisions.filter(
     (decision) => !decision.correct && !decision.replay,
   );
@@ -226,12 +240,25 @@ export default function SessionReview({
           />
         </View>
       )}
-      <View style={s.intro}>
-        <Text style={s.eyebrow}>YOUR SESSION, EXPLAINED</Text>
+      <SessionCelebration
+        key={session.id}
+        sessionId={session.id}
+        animate={celebrate && scored.count > 0}
+        reducedMotion={data.settings.reducedMotion}
+        label={
+          celebrate && scored.count > 0
+            ? "PRACTICE COMPLETE"
+            : "YOUR SESSION RECAP"
+        }
+      >
         <Text accessibilityRole="header" style={s.title}>
-          A clearer next step.
+          {scored.count
+            ? "Practice complete."
+            : replayCount
+              ? "Review complete."
+              : "Your next step starts here."}
         </Text>
-        <Body>
+        <Body style={s.note}>
           {titleCase(session.topic)} ·{" "}
           {session.kind === "simulator"
             ? "Continuous shoe"
@@ -240,7 +267,59 @@ export default function SessionReview({
               : "Strategy practice"}{" "}
           · {new Date(session.startedAt).toLocaleString()}
         </Body>
-      </View>
+        <View style={s.scoreRow}>
+          <View style={s.scoreCopy}>
+            <Text style={s.scoreValue}>{accuracy(scored)}</Text>
+            <Text style={s.metricLabel}>
+              {count ? "Exact count accuracy" : "First-attempt accuracy"}
+            </Text>
+          </View>
+          {scored.count > 0 && (
+            <View style={s.resultBadge}>
+              <Text style={s.badgeMark}>✓</Text>
+              <Text style={s.badgeText}>
+                {correctAnswers === scored.count
+                  ? `All ${scored.count} correct`
+                  : `${scored.count} ${count ? "answers" : "decisions"} practiced`}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View
+          accessibilityRole={scored.count ? "progressbar" : undefined}
+          accessibilityLabel={
+            count ? "Exact count accuracy" : "First-attempt accuracy"
+          }
+          accessibilityValue={
+            scored.count
+              ? {
+                  min: 0,
+                  max: scored.count,
+                  now: correctAnswers,
+                  text: `${correctAnswers} correct from ${scored.count}`,
+                }
+              : undefined
+          }
+          style={[
+            s.summaryTrack,
+            scored.count > 0 && { backgroundColor: colors.redSoft },
+          ]}
+        >
+          <View
+            style={[
+              s.summaryFill,
+              { width: `${scored.count ? scored.accuracy * 100 : 0}%` },
+            ]}
+          />
+        </View>
+        <Text style={s.note}>
+          {scored.count
+            ? `${correctAnswers} correct of ${scored.count} ${count ? "answers" : "first attempts"} · ${titleCase(assistanceProfile(session))}`
+            : replayCount
+              ? `${replayCount} review ${replayCount === 1 ? "attempt" : "attempts"} · excluded from first-attempt accuracy`
+              : "No scored answers were recorded in this session."}
+        </Text>
+      </SessionCelebration>
       <View style={s.row}>
         <Chip
           label={
@@ -257,11 +336,6 @@ export default function SessionReview({
         <>
           <Panel>
             <View style={s.stats}>
-              <Stat
-                label="Exact count accuracy"
-                value={countStats.count ? percent(countStats.accuracy) : "—"}
-                detail={`${count.answers.filter((answer) => answer.absoluteError === 0).length} correct / ${count.answers.length} answers`}
-              />
               <Stat
                 label="Average absolute error"
                 value={
@@ -336,11 +410,6 @@ export default function SessionReview({
           <Panel>
             <View style={s.stats}>
               <Stat
-                label="First-attempt accuracy"
-                value={accuracy(stats)}
-                detail={`${session.decisions.filter((decision) => !decision.replay && decision.correct).length} correct / ${stats.count} decisions`}
-              />
-              <Stat
                 label="Median decision time"
                 value={
                   stats.count ? `${(stats.medianMs / 1000).toFixed(1)}s` : "—"
@@ -404,7 +473,22 @@ export default function SessionReview({
                         <Text style={s.note}>· n={metric.count}</Text>
                       </Text>
                     </View>
-                    <View style={s.track}>
+                    <View
+                      accessibilityRole="progressbar"
+                      accessibilityLabel={`${titleCase(category)} hands accuracy`}
+                      accessibilityValue={{
+                        min: 0,
+                        max: 100,
+                        now: Math.round(metric.accuracy * 100),
+                        text: metric.count
+                          ? `${accuracy(metric)} from ${metric.count} decisions`
+                          : "No decisions",
+                      }}
+                      style={[
+                        s.track,
+                        metric.count > 0 && { backgroundColor: colors.redSoft },
+                      ]}
+                    >
                       <View
                         style={[
                           s.fill,
@@ -444,7 +528,7 @@ export default function SessionReview({
                     <Text
                       style={[
                         s.metricValue,
-                        { color: choice.correct ? colors.green : colors.gold },
+                        { color: choice.correct ? colors.blue : colors.red },
                       ]}
                     >
                       {choice.correct ? "✓ Correct" : "Review"}
@@ -530,7 +614,12 @@ export default function SessionReview({
         </Panel>
       )}
       {!count && stats.count > 0 && !mistakes.length && (
-        <Panel style={{ borderColor: "#416D5C" }}>
+        <Panel
+          style={{
+            borderColor: colors.accentBorder,
+            backgroundColor: colors.accentSoft,
+          }}
+        >
           <Heading>Every first hand decision was correct.</Heading>
           <Body>
             Keep building consistency across more sessions. The next useful
@@ -566,9 +655,11 @@ export default function SessionReview({
           <>
             {!countAnswers.length && (
               <Body>
-                {filter === "mistakes"
-                  ? "No count errors in this session."
-                  : "This session has no submitted count answers."}
+                {!count.answers.length
+                  ? "This session has no submitted count answers."
+                  : filter === "mistakes"
+                    ? "No count errors in this session."
+                    : "This session has no submitted count answers."}
               </Body>
             )}
             {countAnswers.slice(0, visible).map((answer) => (
@@ -580,9 +671,7 @@ export default function SessionReview({
                       s.metricValue,
                       {
                         color:
-                          answer.absoluteError === 0
-                            ? colors.green
-                            : colors.gold,
+                          answer.absoluteError === 0 ? colors.blue : colors.red,
                       },
                     ]}
                   >
@@ -639,7 +728,7 @@ export default function SessionReview({
                   </View>
                   <Text
                     style={{
-                      color: decision.correct ? colors.green : colors.gold,
+                      color: decision.correct ? colors.blue : colors.red,
                       fontWeight: "600",
                     }}
                   >
@@ -675,6 +764,48 @@ export default function SessionReview({
 }
 
 const s = StyleSheet.create({
+  scoreRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 16,
+  },
+  scoreCopy: { flex: 1, minWidth: 150, gap: 4 },
+  scoreValue: {
+    color: colors.text,
+    fontSize: 56,
+    fontWeight: "700",
+    letterSpacing: -2,
+    fontVariant: ["tabular-nums"],
+  },
+  resultBadge: {
+    maxWidth: "100%",
+    flexShrink: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+  },
+  badgeMark: { color: colors.blue, fontSize: 18, fontWeight: "700" },
+  badgeText: {
+    color: colors.blue,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  summaryTrack: {
+    height: 8,
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: colors.surface2,
+  },
+  summaryFill: { height: 8, borderRadius: 8, backgroundColor: colors.blue },
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -692,7 +823,7 @@ const s = StyleSheet.create({
   eyebrow: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.blue,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1.6,
@@ -732,7 +863,7 @@ const s = StyleSheet.create({
   metricValue: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.blue,
     fontSize: 15,
     fontWeight: "600",
   },
@@ -743,7 +874,7 @@ const s = StyleSheet.create({
     borderRadius: 5,
     overflow: "hidden",
   },
-  fill: { height: 5, backgroundColor: colors.green, borderRadius: 5 },
+  fill: { height: 5, backgroundColor: colors.blue, borderRadius: 5 },
   mistake: {
     gap: 12,
     paddingTop: 17,
@@ -775,7 +906,7 @@ const s = StyleSheet.create({
     padding: 18,
     gap: 20,
     borderRadius: 13,
-    backgroundColor: "#102B2A",
+    backgroundColor: colors.table,
   },
   hand: { gap: 10, alignItems: "center" },
   label: {

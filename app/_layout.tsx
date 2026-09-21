@@ -64,7 +64,7 @@ function Settings({
                   },
                 }))
               }
-              trackColor={{ true: "#397B62" }}
+              trackColor={{ true: "#3D65A1" }}
             />
           </View>
           <View style={shared.between}>
@@ -81,7 +81,7 @@ function Settings({
                   },
                 }))
               }
-              trackColor={{ true: "#397B62" }}
+              trackColor={{ true: "#3D65A1" }}
             />
           </View>
         </Panel>
@@ -120,7 +120,7 @@ function Settings({
                 accessibilityLabel={label}
                 value={data.settings[key]}
                 onValueChange={() => toggle(key)}
-                trackColor={{ true: "#397B62" }}
+                trackColor={{ true: "#3D65A1" }}
               />
             </View>
           ))}
@@ -209,7 +209,7 @@ function Navigation() {
                   letterSpacing: -0.7,
                 }}
               >
-                acewise<Text style={{ color: colors.green }}>.</Text>
+                acewise<Text style={{ color: colors.red }}>.</Text>
               </Text>
             </View>
           ),
@@ -298,7 +298,7 @@ export default function Layout() {
   );
 }
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "#02090DF2", alignItems: "center" },
+  overlay: { flex: 1, backgroundColor: "#060C1CF2", alignItems: "center" },
   modal: {
     padding: 24,
     paddingTop: 50,

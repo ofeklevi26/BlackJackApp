@@ -131,6 +131,24 @@ export default function ProgressScreen() {
   const completed = LESSONS.filter(
     (lesson) => data.completedLessons[lesson.id],
   ).length;
+  const practicedDecisions = sessions.reduce(
+    (total, session) =>
+      total + session.decisions.filter((decision) => !decision.replay).length,
+    0,
+  );
+  const practicedCounts = sessions.reduce(
+    (total, session) => total + (session.countResult?.answers.length ?? 0),
+    0,
+  );
+  const latestScored = trend[trend.length - 1];
+  const previousScored = trend[trend.length - 2];
+  const recentChange =
+    latestScored && previousScored
+      ? Math.round(
+          (sessionAccuracy(latestScored) - sessionAccuracy(previousScored)) *
+            1000,
+        ) / 10
+      : null;
   const weak = ["hard", "soft", "pairs"]
     .filter(
       (category) =>
@@ -274,26 +292,71 @@ export default function ProgressScreen() {
     <>
       <Page>
         <View style={s.intro}>
-          <Text style={s.eyebrow}>SMALL IMPROVEMENTS ADD UP</Text>
+          <Text style={s.eyebrow}>YOUR PRACTICE RECORD</Text>
           <Text accessibilityRole="header" style={s.title}>
-            See your skills take shape.
+            See your practice add up.
           </Text>
           <Body>
             Your actual practice, with the conditions and sample sizes that make
             progress meaningful.
           </Body>
         </View>
-        <Panel>
-          <View style={s.stats}>
-            <Stat label="Sessions completed" value={String(sessions.length)} />
-            <Stat
-              label="Lessons completed"
-              value={`${completed} / ${LESSONS.length}`}
-            />
-            <Stat
-              label="Saved situations"
-              value={String(data.bookmarks.length)}
-            />
+        <Panel style={s.practicePanel}>
+          <View style={s.practiceGrid}>
+            {[
+              { value: sessions.length, label: "Sessions saved", mark: "♠" },
+              {
+                value: practicedDecisions,
+                label: "Scored decisions",
+                mark: "✓",
+              },
+              { value: practicedCounts, label: "Count answers", mark: "+/−" },
+            ].map((item) => (
+              <View key={item.label} style={s.practiceTile}>
+                <Text accessible={false} style={s.tileMark}>
+                  {item.mark}
+                </Text>
+                <Text style={s.tileValue}>{item.value}</Text>
+                <Text style={s.note}>{item.label}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={s.lessonProgress}>
+            <View style={s.between}>
+              <Text style={s.skillLabel}>Your learning path</Text>
+              <Text style={s.skillValue}>
+                {completed} / {LESSONS.length} lessons
+              </Text>
+            </View>
+            <View
+              accessibilityRole="progressbar"
+              accessibilityLabel="Lessons completed"
+              accessibilityValue={{
+                min: 0,
+                max: LESSONS.length,
+                now: completed,
+              }}
+              style={s.lessonTrack}
+            >
+              {LESSONS.map((lesson) => (
+                <View
+                  key={lesson.id}
+                  style={[
+                    s.lessonSegment,
+                    !!data.completedLessons[lesson.id] && {
+                      backgroundColor: colors.blue,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+            <Text style={s.note}>
+              {completed === LESSONS.length
+                ? "Every lesson completed. Revisit a topic whenever you want a refresher."
+                : completed > 0
+                  ? "A foundation you can build on, one concept at a time."
+                  : "Each completed lesson adds another piece to your foundation."}
+            </Text>
           </View>
         </Panel>
 
@@ -482,6 +545,53 @@ export default function ProgressScreen() {
                     Oldest → newest. Tap a bar to review that session. Values
                     show accuracy, with the number of answers beneath each bar.
                   </Body>
+                  {latestScored && (
+                    <View style={s.trendSpotlight}>
+                      <View style={{ flex: 1, minWidth: 130, gap: 5 }}>
+                        <Text style={s.eyebrow}>LATEST SCORED SESSION</Text>
+                        <Text style={s.spotlightValue}>
+                          {percent(sessionAccuracy(latestScored))}
+                        </Text>
+                        <Text style={s.note}>
+                          {sampleSize(latestScored)}{" "}
+                          {view === "counting" ? "answers" : "first attempts"} ·{" "}
+                          {titleCase(assistanceProfile(latestScored))}
+                        </Text>
+                      </View>
+                      <View style={s.spotlightCopy}>
+                        {recentChange !== null && previousScored ? (
+                          <>
+                            <Text
+                              style={[
+                                s.spotlightChange,
+                                {
+                                  color:
+                                    recentChange < 0 ? colors.red : colors.blue,
+                                },
+                              ]}
+                            >
+                              {recentChange === 0
+                                ? "Within 0.1 percentage points"
+                                : `${Math.abs(recentChange)} percentage points ${recentChange > 0 ? "higher" : "lower"}`}
+                            </Text>
+                            <Text style={s.note}>
+                              Compared with the previous session’s{" "}
+                              {sampleSize(previousScored)}{" "}
+                              {view === "counting"
+                                ? "answers"
+                                : "first attempts"}{" "}
+                              under the same conditions.
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={s.note}>
+                            Your starting point for this set of practice
+                            conditions.
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
                   {trend.length ? (
                     <ScrollView
                       horizontal
@@ -524,6 +634,25 @@ export default function ProgressScreen() {
                   ) : (
                     <Body>No scored answers in this group yet.</Body>
                   )}
+                  {!!trend.length && (
+                    <View style={s.row}>
+                      <View style={s.legendItem}>
+                        <View
+                          style={[
+                            s.legendDot,
+                            { backgroundColor: colors.blue },
+                          ]}
+                        />
+                        <Text style={s.note}>Correct answers</Text>
+                      </View>
+                      <View style={s.legendItem}>
+                        <View
+                          style={[s.legendDot, { backgroundColor: colors.red }]}
+                        />
+                        <Text style={s.note}>Answers to review</Text>
+                      </View>
+                    </View>
+                  )}
                   {trend.length === 1 && (
                     <Body style={s.note}>
                       One session gives you a starting point. Complete more
@@ -565,7 +694,24 @@ export default function ProgressScreen() {
                                 <Text style={s.note}>· n={metric.count}</Text>
                               </Text>
                             </View>
-                            <View style={s.track}>
+                            <View
+                              accessibilityRole="progressbar"
+                              accessibilityLabel={`${titleCase(category)} accuracy`}
+                              accessibilityValue={{
+                                min: 0,
+                                max: 100,
+                                now: Math.round(metric.accuracy * 100),
+                                text: metric.count
+                                  ? `${percent(metric.accuracy)} from ${metric.count} decisions`
+                                  : "No decisions",
+                              }}
+                              style={[
+                                s.track,
+                                metric.count > 0 && {
+                                  backgroundColor: colors.redSoft,
+                                },
+                              ]}
+                            >
                               <View
                                 style={[
                                   s.fill,
@@ -657,10 +803,10 @@ export default function ProgressScreen() {
                                           backgroundColor: !value
                                             ? colors.bg
                                             : rate >= 0.8
-                                              ? "#245342"
+                                              ? colors.accentSoft
                                               : rate >= 0.5
-                                                ? "#4A4B2E"
-                                                : "#57352E",
+                                                ? colors.surface2
+                                                : colors.redSoft,
                                           borderColor: chosen
                                             ? colors.text
                                             : "transparent",
@@ -871,11 +1017,65 @@ export default function ProgressScreen() {
 }
 
 const s = StyleSheet.create({
+  practicePanel: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
+    gap: 20,
+  },
+  practiceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  practiceTile: {
+    flex: 1,
+    minWidth: 100,
+    gap: 6,
+    padding: 12,
+    borderRadius: 15,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tileMark: { color: colors.blue, fontSize: 18, fontWeight: "600" },
+  tileValue: {
+    color: colors.text,
+    fontSize: 31,
+    lineHeight: 38,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  lessonProgress: { gap: 10 },
+  lessonTrack: { flexDirection: "row", gap: 4 },
+  lessonSegment: {
+    flex: 1,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.surface2,
+  },
+  trendSpotlight: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 16,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    borderRadius: 17,
+    padding: 16,
+    backgroundColor: colors.accentSoft,
+  },
+  spotlightValue: {
+    color: colors.text,
+    fontSize: 42,
+    fontWeight: "700",
+    letterSpacing: -1,
+    fontVariant: ["tabular-nums"],
+  },
+  spotlightCopy: { flex: 1, minWidth: 140, gap: 6 },
+  spotlightChange: { fontSize: 15, lineHeight: 22, fontWeight: "600" },
+  legendItem: { flexDirection: "row", gap: 6, alignItems: "center" },
+  legendDot: { width: 6, height: 6, borderRadius: 3 },
   intro: { gap: 12, maxWidth: 720 },
   eyebrow: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.blue,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1.6,
@@ -910,8 +1110,11 @@ const s = StyleSheet.create({
     fontSize: 12,
     lineHeight: 19,
   },
-  emptyPanel: { borderColor: "#3D6357", backgroundColor: "#142B29" },
-  emptySuit: { color: colors.green, fontSize: 44 },
+  emptyPanel: {
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.accentSoft,
+  },
+  emptySuit: { color: colors.blue, fontSize: 44 },
   groupList: { gap: 9 },
   groupOption: {
     padding: 14,
@@ -921,7 +1124,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  groupSelected: { borderColor: colors.green },
+  groupSelected: { borderColor: colors.blue },
   groupText: {
     maxWidth: "100%",
     flexShrink: 1,
@@ -944,7 +1147,7 @@ const s = StyleSheet.create({
   },
   barTrack: {
     height: 112,
-    backgroundColor: colors.surface2,
+    backgroundColor: colors.redSoft,
     width: "78%",
     maxWidth: 66,
     borderRadius: 6,
@@ -953,7 +1156,7 @@ const s = StyleSheet.create({
   },
   bar: {
     width: "100%",
-    backgroundColor: colors.green,
+    backgroundColor: colors.blue,
     borderRadius: 5,
     minHeight: 0,
   },
@@ -971,7 +1174,7 @@ const s = StyleSheet.create({
   skillValue: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.blue,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -981,7 +1184,7 @@ const s = StyleSheet.create({
     borderRadius: 5,
     overflow: "hidden",
   },
-  fill: { height: 5, backgroundColor: colors.green, borderRadius: 5 },
+  fill: { height: 5, backgroundColor: colors.blue, borderRadius: 5 },
   heatRow: { flexDirection: "row", gap: 3, marginBottom: 3 },
   heatLabel: { width: 59, height: 44, justifyContent: "center" },
   heatCell: {
@@ -1020,7 +1223,7 @@ const s = StyleSheet.create({
   historyAccuracy: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.blue,
     fontSize: 17,
     fontWeight: "600",
   },

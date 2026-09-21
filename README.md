@@ -1,6 +1,6 @@
 # Acewise
 
-A calm, offline blackjack learning app built with Expo SDK 57, React Native, TypeScript, and Expo Router. Learn a concept, practice a decision, understand the explanation, then revisit your weak spots.
+A visual, offline blackjack learning app built with Expo SDK 57, React Native, TypeScript, and Expo Router. Learn a concept, practice a decision, understand the explanation, then revisit your weak spots.
 
 ## Free iPhone installation
 
@@ -30,6 +30,7 @@ If your Node installation does not include Corepack, install pnpm using its offi
 ## What is included
 
 - Four tabs: Home, Learn, Practice, and Progress, plus onboarding and table preferences.
+- A navy, blue, and red visual system, tactile controls, visible lesson milestones, and brief feedback transitions. Fresh session reviews celebrate actual practice and show clearly labeled accuracy; historical reviews remain still.
 - Ten interactive lessons, guided examples, mastery checks, a glossary, and a tappable strategy chart.
 - Mixed, focused, adaptive, custom, and count-deviation scenarios, with balanced or realistic initial-deal sampling.
 - Custom hands are one-decision exercises; similar-hand practice starts a fresh focused session.
@@ -39,6 +40,7 @@ If your Node installation does not include Corepack, install pnpm using its offi
 - A finite six-deck table with persistent shoes, insurance, splitting, doubling, surrender, dealer peek, and virtual-unit accounting.
 - Configurable completed-round count checkpoints, with exposed-card corrections in Coach mode.
 - A separate casino mode: start with $1,000 in virtual chips, place $5–$100 wagers, and play complete rounds without quizzes, count prompts, or grading. Choose 1, 2, 4, 6, or 8 decks. Includes insurance, splits, doubles, surrender, repeat bets, saved shoes/rounds, a fresh-session reset, and optional tap-to-reveal running and true counts.
+- Casino cards slide into place in actual shoe order, with a dealer hole-card flip and staggered dealer draws. New hits/split cards animate without replaying existing cards. Results appear after the reveal, and controls briefly wait for dealing to finish. Reduce Motion shows the final cards immediately; reopening a saved hand never replays its deal.
 - Session restarts preserve recorded rules and training conditions, including checkpoint cadence.
 - Session reviews, bookmarks, first-attempt and assistance-separated accuracy, response time, counting error, category trends, and history export.
 - Local persistence, pause/resume, optional haptics/card sound, reduced motion, and accessible labeled controls.

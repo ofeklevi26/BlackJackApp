@@ -94,6 +94,7 @@ export function Button({
             ? s.secondary
             : s.ghost,
         { opacity: disabled ? 0.38 : pressed ? 0.75 : 1 },
+        !disabled && pressed && { borderColor: colors.blue },
         style,
       ]}
     >
@@ -123,7 +124,11 @@ export function Chip({
       disabled={!onPress}
       accessibilityRole={onPress ? "button" : "text"}
       accessibilityState={{ selected: !!selected }}
-      style={[s.chip, selected && s.chipSelected]}
+      style={({ pressed }) => [
+        s.chip,
+        selected && s.chipSelected,
+        pressed && onPress && { opacity: 0.7 },
+      ]}
     >
       <Text
         style={{
@@ -160,6 +165,7 @@ export function PlayingCard({
     >
       {hidden ? (
         <>
+          <View style={s.cardBackFrame} />
           <View style={s.cardBackLine} />
           <Text style={{ color: colors.green, fontSize: small ? 27 : 40 }}>
             ♠
@@ -171,14 +177,14 @@ export function PlayingCard({
           <Text
             style={[
               s.cardRank,
-              { color: red ? "#B3444C" : "#153A36", fontSize: small ? 16 : 22 },
+              { color: red ? "#C12646" : "#182F59", fontSize: small ? 16 : 22 },
             ]}
           >
             {card?.rank}
           </Text>
           <Text
             style={{
-              color: red ? "#B3444C" : "#153A36",
+              color: red ? "#C12646" : "#182F59",
               fontSize: small ? 24 : 37,
               textAlign: "center",
             }}
@@ -189,7 +195,7 @@ export function PlayingCard({
             style={[
               s.cardRank,
               {
-                color: red ? "#B3444C" : "#153A36",
+                color: red ? "#C12646" : "#182F59",
                 alignSelf: "flex-end",
                 transform: [{ rotate: "180deg" }],
                 fontSize: small ? 16 : 22,
@@ -248,7 +254,7 @@ export const shared = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.bg,
+    backgroundColor: "#0D172B",
     borderRadius: 12,
     color: colors.text,
     padding: 14,
@@ -279,7 +285,7 @@ const s = StyleSheet.create({
   },
   heading: {
     fontSize: 22,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.text,
     letterSpacing: -0.4,
   },
@@ -305,7 +311,16 @@ const s = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  primary: { backgroundColor: colors.green },
+  primary: {
+    backgroundColor: colors.blue,
+    borderWidth: 1,
+    borderColor: "#A9C8FF",
+    shadowColor: "#2B70E4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   secondary: {
     backgroundColor: colors.surface2,
     borderWidth: 1,
@@ -321,7 +336,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  chipSelected: { backgroundColor: "#1C3E36", borderColor: "#4A9B7F" },
+  chipSelected: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
+  },
   card: {
     width: 78,
     minHeight: 113,
@@ -331,7 +349,9 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
+    borderWidth: 1,
+    borderColor: "#D5E3FF",
+    shadowOpacity: 0.28,
     shadowRadius: 9,
     elevation: 3,
   },
@@ -339,11 +359,21 @@ const s = StyleSheet.create({
   cardRank: { fontWeight: "700", lineHeight: 23 },
   cardBack: {
     borderWidth: 2,
-    borderColor: "#42665F",
-    backgroundColor: "#1C4943",
+    borderColor: "#759BDE",
+    backgroundColor: "#18366B",
     alignItems: "center",
     justifyContent: "center",
     gap: 9,
   },
-  cardBackLine: { height: 1, width: "60%", backgroundColor: "#4E7A6E" },
+  cardBackFrame: {
+    position: "absolute",
+    top: 4,
+    bottom: 4,
+    left: 4,
+    right: 4,
+    borderWidth: 1,
+    borderColor: "#456BA8",
+    borderRadius: 5,
+  },
+  cardBackLine: { height: 1, width: "60%", backgroundColor: colors.red },
 });

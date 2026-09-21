@@ -46,11 +46,11 @@ const letters: Record<Action, string> = {
   surrender: "R",
 };
 const actionColors: Record<Action, string> = {
-  hit: colors.green,
-  stand: colors.gold,
-  double: "#9CBDF2",
-  split: "#C7ADF2",
-  surrender: colors.red,
+  hit: colors.accent,
+  stand: colors.red,
+  double: "#B6D0FF",
+  split: colors.text,
+  surrender: "#FFA8B6",
 };
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n).replace("-", "−"));
 function Kicker({ children }: { children: React.ReactNode }) {
@@ -242,7 +242,7 @@ function Exercise({
                 style={[
                   s.optionText,
                   selected !== null &&
-                    option.id === correctId && { color: colors.green },
+                    option.id === correctId && { color: colors.positive },
                 ]}
               >
                 {selected !== null && option.id === correctId ? "✓ " : ""}
@@ -260,13 +260,13 @@ function Exercise({
           <Text
             style={[
               s.feedbackTitle,
-              { color: correct ? colors.green : colors.gold },
+              { color: correct ? colors.positive : colors.warning },
             ]}
           >
             {correct
               ? guided
-                ? "That’s right"
-                : "Knowledge check passed"
+                ? "✓ That’s right"
+                : "✓ Knowledge check passed"
               : "Let’s review this one"}
           </Text>
           <Body style={{ color: colors.text }}>{explanation}</Body>
@@ -424,7 +424,7 @@ function StrategyChart({
           Count-based deviations are taught separately.
         </Body>
       </Panel>
-      <Panel style={{ borderColor: "#41655D" }}>
+      <Panel style={{ borderColor: colors.accentBorder }}>
         <View style={s.between}>
           <View style={s.hand}>
             <Kicker>Your hand</Kicker>
@@ -614,13 +614,10 @@ export default function LearnScreen({
                     pressed && { backgroundColor: colors.surface2 },
                   ]}
                 >
-                  <View
-                    style={[
-                      s.numberBox,
-                      done && { backgroundColor: "#1C3E36" },
-                    ]}
-                  >
-                    <Text style={[s.number, done && { color: colors.green }]}>
+                  <View style={[s.numberBox, done && s.completedNumber]}>
+                    <Text
+                      style={[s.number, done && { color: colors.positive }]}
+                    >
                       {done ? "✓" : String(index + 1).padStart(2, "0")}
                     </Text>
                   </View>
@@ -628,7 +625,7 @@ export default function LearnScreen({
                     <Text style={s.lessonTitle}>{item.title}</Text>
                     <Text style={s.lessonDescription}>{item.description}</Text>
                     <Text
-                      style={[s.meta, needsReview && { color: colors.gold }]}
+                      style={[s.meta, needsReview && { color: colors.warning }]}
                     >
                       {item.minutes} min ·{" "}
                       {needsReview
@@ -789,7 +786,7 @@ const s = StyleSheet.create({
     gap: 16,
   },
   kicker: {
-    color: colors.green,
+    color: colors.accent,
     fontWeight: "700",
     fontSize: 11,
     letterSpacing: 1.5,
@@ -807,8 +804,11 @@ const s = StyleSheet.create({
     letterSpacing: -1.1,
     lineHeight: 43,
   },
-  reviewPanel: { backgroundColor: "#292D25", borderColor: "#626448" },
-  progressPanel: { backgroundColor: "#142C2C", borderColor: "#335B50" },
+  reviewPanel: { backgroundColor: colors.redSoft, borderColor: colors.red },
+  progressPanel: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
+  },
   progressCopy: { flex: 1, minWidth: 200, gap: 6 },
   nextTitle: {
     maxWidth: "100%",
@@ -818,12 +818,12 @@ const s = StyleSheet.create({
     fontWeight: "600",
   },
   track: {
-    backgroundColor: "#29423E",
+    backgroundColor: colors.surface2,
     height: 5,
     borderRadius: 8,
     overflow: "hidden",
   },
-  fill: { height: 5, borderRadius: 8, backgroundColor: colors.green },
+  fill: { height: 5, borderRadius: 8, backgroundColor: colors.accent },
   lessonList: { gap: 9 },
   lessonRow: {
     flexDirection: "row",
@@ -843,6 +843,11 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  completedNumber: {
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+  },
   number: {
     color: colors.muted,
     fontSize: 15,
@@ -861,7 +866,7 @@ const s = StyleSheet.create({
   meta: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.accent,
     fontSize: 11,
     lineHeight: 17,
   },
@@ -874,16 +879,16 @@ const s = StyleSheet.create({
   },
   example: {
     borderLeftWidth: 3,
-    borderLeftColor: colors.gold,
+    borderLeftColor: colors.red,
     paddingLeft: 16,
     paddingVertical: 5,
     gap: 8,
   },
-  exampleTitle: { color: colors.gold, fontSize: 14, fontWeight: "600" },
+  exampleTitle: { color: colors.red, fontSize: 14, fontWeight: "600" },
   exercise: { gap: 17 },
   prompt: { color: colors.text, fontSize: 16, lineHeight: 25 },
   table: {
-    backgroundColor: "#102B2A",
+    backgroundColor: colors.table,
     borderRadius: 15,
     padding: 19,
     flexDirection: "row",
@@ -907,8 +912,11 @@ const s = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  correctOption: { backgroundColor: "#1C3E36", borderColor: "#4A9B7F" },
-  wrongOption: { backgroundColor: "#392E2B", borderColor: "#976B58" },
+  correctOption: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  wrongOption: { backgroundColor: colors.redSoft, borderColor: colors.red },
   optionText: {
     color: colors.text,
     fontSize: 14,
@@ -917,21 +925,24 @@ const s = StyleSheet.create({
     lineHeight: 21,
   },
   feedback: {
-    backgroundColor: "#15372F",
+    backgroundColor: colors.accentSoft,
     borderWidth: 1,
-    borderColor: "#345A4D",
+    borderColor: colors.accentBorder,
     borderRadius: 13,
     padding: 17,
     gap: 9,
   },
-  reviewFeedback: { backgroundColor: "#302E24", borderColor: "#635C3E" },
+  reviewFeedback: { backgroundColor: colors.redSoft, borderColor: colors.red },
   feedbackTitle: { fontSize: 16, fontWeight: "600" },
-  completion: { borderColor: "#4A9B7F", backgroundColor: "#142E29" },
+  completion: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
   countRow: { gap: 10, paddingBottom: 5 },
   tag: {
     maxWidth: "100%",
     flexShrink: 1,
-    color: colors.green,
+    color: colors.accent,
     minHeight: 20,
     fontSize: 14,
     fontWeight: "600",
@@ -952,7 +963,10 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
-  chartSelected: { borderColor: colors.text, backgroundColor: "#34504E" },
+  chartSelected: {
+    borderColor: colors.text,
+    backgroundColor: colors.accentSoft,
+  },
   chartLetter: { fontWeight: "700", fontSize: 14 },
   largeAction: { fontSize: 28, fontWeight: "600" },
   sourceLink: { minHeight: 44, justifyContent: "center" },
@@ -986,6 +1000,6 @@ const s = StyleSheet.create({
     fontWeight: "500",
     flex: 1,
   },
-  termToggle: { color: colors.green, fontSize: 23 },
+  termToggle: { color: colors.accent, fontSize: 23 },
   definition: { paddingHorizontal: 21, paddingBottom: 22, maxWidth: 760 },
 });

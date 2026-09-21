@@ -57,7 +57,7 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     alignItems: "center",
-    backgroundColor: "#02090DCC",
+    backgroundColor: "#060C1CDD",
   },
   sheet: {
     width: "100%",
