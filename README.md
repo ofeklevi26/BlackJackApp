@@ -2,6 +2,14 @@
 
 A calm, offline blackjack learning app built with Expo SDK 57, React Native, TypeScript, and Expo Router. Learn a concept, practice a decision, understand the explanation, then revisit your weak spots.
 
+## Free iPhone installation
+
+**Open [Acewise](https://acewise-ofeklevi28.expo.app) in Safari.** Use this production address for your installed app.
+
+Acewise can be installed as a Home Screen web app. It needs neither Expo Go nor an Apple Developer membership. Open the published production URL in **Safari**, choose **Share → Add to Home Screen → Add**, then launch the new Acewise icon while connected. Open Settings and wait for **Ready to use offline**. Lessons, counting drills, practice, and the virtual casino then run without a computer or internet connection.
+
+Keep using the same production URL: preview deployments, localhost, and Expo Go have separate saved progress. Browser storage is local and may be removed by clearing website data or by the operating system; export important history from Settings. Exports are backups for inspection, not an automatic import or cloud sync. Reopen online if an offline download needs repairing.
+
 ## Start the app
 
 Requirements: Node.js 24 LTS (Expo requires at least 22.13), pnpm 11.19, and Git.
@@ -82,18 +90,37 @@ tests/                Domain, curriculum, counting, and state checks
 assets/               Original app icon and generated card sound
 ```
 
-Progress is stored under `acewise:v1` using AsyncStorage. On web, this is browser storage for the current origin. Clearing app/browser data removes local history; export it from Settings or Progress first. There is no cloud synchronization. Native export opens the share sheet with JSON; web export downloads a JSON file. The web bundle can be served statically; native installed builds provide the intended offline experience. A browser service worker is not included.
+Progress is stored under `acewise:v1` using AsyncStorage. On web, this is browser storage for the current origin. Clearing app/browser data removes local history; export it from Settings or Progress first. There is no cloud synchronization. Native export opens the share sheet with JSON; web export downloads a JSON file.
+
+## Free web deployment and offline updates
+
+The Expo project is linked to `@ofeklevi28/acewise`. EAS Hosting supports Expo's Free plan; this app needs no paid backend or Apple signing. Free hosting has request/storage quotas: monitor them in the Expo dashboard and do not upgrade for personal offline use unless you choose to. See [Expo Hosting setup](https://docs.expo.dev/eas/hosting/get-started/) and [current plan limits](https://expo.dev/pricing).
+
+```sh
+npx eas-cli@latest login
+pnpm check
+pnpm export:web
+npx eas-cli@latest deploy --prod
+```
+
+`pnpm export:web` exports the app and generates `dist/service-worker.js`. Deploy the complete `dist` directory without rewriting its files. Other hosts must serve HTTPS, return `/index.html` for SPA routes such as `/practice?topic=casino`, and serve `.js`, fonts, audio, and the manifest with correct MIME types. The worker must be served at `/service-worker.js` with root scope. Do not rewrite missing asset requests to HTML.
+
+The worker saves the app shell and all exported assets, verifies their content hashes, and enables offline deep links and Safari audio byte ranges. Settings checks the saved files before reporting offline readiness and offers repair if browser cache entries were removed. Service-worker registration is disabled in Metro development and native builds. A plain development preview is not an offline installation.
+
+When a deployment changes, the browser downloads the new version while connected. It waits until all Acewise windows close before activating, so it does not reload an active hand. Settings announces a downloaded update. Reopen the app after closing it and its Safari tabs to use that update; saved progress is kept. GitHub pushes run checks but do **not** deploy automatically: run the deployment commands above to publish a new version.
+
+For local offline QA, serve `dist` on a localhost origin with SPA fallback, load it and wait for Ready, then stop only that static server and reload `/practice?topic=casino`. Confirm lessons, casino actions, and saved progress still work. Do not use Metro for this check. Automated worker tests cover failed/partial installs, asset integrity, offline routes, cache versions, cache isolation, repair, and media ranges. Actual iPhone installation and airplane-mode verification still need a physical iPhone.
 
 ## Expo builds
 
 An Expo account and platform signing credentials are required for cloud builds, but not local web development. Project linking and publishing are separate from pushing code to GitHub.
 
 ```sh
-pnpm dlx eas-cli login
-pnpm dlx eas-cli init
-pnpm dlx eas-cli build --profile preview --platform android
-pnpm dlx eas-cli build --profile development --platform ios
-pnpm dlx eas-cli build --profile production --platform all
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest build --profile preview --platform android
+npx eas-cli@latest build --profile development --platform ios
+npx eas-cli@latest build --profile production --platform all
 ```
 
 The preview Android profile produces an APK. iOS internal distribution requires a registered device and suitable Apple credentials. Production builds use app-store distribution; review your bundle identifiers, Expo project association, privacy declarations, and store assets before submission. `eas.json` includes development, preview, and production profiles. Do not commit credentials or signing material.

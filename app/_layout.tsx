@@ -14,8 +14,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StoreProvider, useStore, exportHistory } from "../src/state/store";
 import { colors, Body, Heading, Button, Panel, Chip, shared } from "../src/ui";
+import { useOfflineStatus } from "../src/web/useOfflineStatus";
+import { OfflinePanel } from "../src/web/OfflinePanel";
 
-function Settings({ close }: { close: () => void }) {
+function Settings({
+  close,
+  offline,
+}: {
+  close: () => void;
+  offline: ReturnType<typeof useOfflineStatus>;
+}) {
   const { data, update, reset, storageError } = useStore();
   const [confirm, setConfirm] = useState(false);
   const [notice, setNotice] = useState("");
@@ -35,6 +43,7 @@ function Settings({ close }: { close: () => void }) {
           Changes apply to your next session. Your current table keeps its
           original rules.
         </Body>
+        <OfflinePanel offline={offline} />
         <Panel>
           <Heading>Table rules</Heading>
           <Body>
@@ -119,7 +128,7 @@ function Settings({ close }: { close: () => void }) {
         <Panel>
           <Heading>Saved on this device</Heading>
           <Body>
-            Lessons, history, and your active shoe stay here and work offline.
+            Lessons, history, and your active shoe are saved on this device.
           </Body>
           {storageError && (
             <Body style={{ color: colors.red }}>{storageError}</Body>
@@ -175,6 +184,7 @@ function Settings({ close }: { close: () => void }) {
   );
 }
 function Navigation() {
+  const offline = useOfflineStatus();
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(false);
   const { data, update } = useStore();
@@ -275,7 +285,7 @@ function Navigation() {
         animationType={data.settings.reducedMotion ? "none" : "fade"}
         onRequestClose={() => setSettings(false)}
       >
-        <Settings close={() => setSettings(false)} />
+        <Settings close={() => setSettings(false)} offline={offline} />
       </Modal>
     </>
   );

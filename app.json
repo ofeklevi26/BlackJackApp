@@ -11,7 +11,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ofeklevi.acewise"
     },
-    "android": { "package": "com.ofeklevi.acewise" },
+    "android": {
+      "package": "com.ofeklevi.acewise"
+    },
     "web": {
       "bundler": "metro",
       "output": "single",
@@ -19,6 +21,15 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": ["expo-router"],
-    "experiments": { "typedRoutes": true }
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a2c41436-39e7-40e2-995d-5bc9e2b95aeb"
+      }
+    },
+    "owner": "ofeklevi28"
   }
 }

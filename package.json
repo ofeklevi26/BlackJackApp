@@ -11,7 +11,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "export:web": "expo export --platform web",
+    "export:web": "expo export --platform web && node scripts/generate-service-worker.mjs",
     "check": "pnpm typecheck && pnpm test"
   },
   "dependencies": {
