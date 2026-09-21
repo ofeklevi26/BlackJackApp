@@ -122,7 +122,13 @@ function CasinoCard({
   );
 }
 
-function CompactSingleRound({ table }: { table: CasinoState }) {
+function StackedSingleRound({
+  table,
+  compact,
+}: {
+  table: CasinoState;
+  compact: boolean;
+}) {
   const round = table.shoe.round!;
   const hand = round.hands[0];
   const playerValue = handValue(hand.cards);
@@ -136,19 +142,34 @@ function CompactSingleRound({ table }: { table: CasinoState }) {
         : colors.text;
   return (
     <>
-      <View style={s.compactSides}>
-        <View style={s.compactSeat}>
-          <Text style={s.label}>DEALER</Text>
-          <View style={[s.cards, { gap: 4 }]}>
+      <View style={[s.stackedSeats, compact && { gap: 4 }]}>
+        <View style={[s.stackedSeat, compact && s.shortSeat]}>
+          <View style={[s.seatHeading, compact && s.shortSeatHeading]}>
+            <Text style={s.label}>DEALER</Text>
+            <Text style={round.dealerRevealed ? s.total : s.caption}>
+              {round.dealerRevealed
+                ? dealerValue.total > 21
+                  ? `${dealerValue.total} · bust`
+                  : dealerValue.blackjack
+                    ? "Blackjack"
+                    : dealerValue.total
+                : "Hole card down"}
+            </Text>
+          </View>
+          <View style={[s.cards, s.seatCards, compact && { flex: 1 }]}>
             {round.dealer.map((card, index) => (
               <View
                 key={card.id}
                 style={
-                  index > 0 && round.dealer.length > 2
+                  index > 0 && round.dealer.length > 3
                     ? {
-                        marginLeft: Math.max(
-                          -31,
-                          76 / (round.dealer.length - 1) - 48,
+                        marginLeft: Math.min(
+                          0,
+                          Math.max(
+                            compact ? -31 : -43,
+                            (compact ? 132 : 204) / (round.dealer.length - 1) -
+                              (compact ? 48 : 64),
+                          ),
                         ),
                       }
                     : undefined
@@ -156,59 +177,66 @@ function CompactSingleRound({ table }: { table: CasinoState }) {
               >
                 <CasinoCard
                   card={card}
-                  compact
+                  compact={compact}
+                  small
                   hidden={index > 0 && !round.dealerRevealed}
                 />
               </View>
             ))}
           </View>
-          <Text style={s.total}>
-            {round.dealerRevealed
-              ? dealerValue.total > 21
-                ? `${dealerValue.total} · bust`
-                : dealerValue.blackjack
-                  ? "Blackjack"
-                  : dealerValue.total
-              : "Hole card down"}
-          </Text>
         </View>
         <View
-          style={[s.compactSeat, round.phase === "playing" && s.activeHand]}
+          style={[
+            s.stackedSeat,
+            compact && s.shortSeat,
+            round.phase === "playing" && s.activeHand,
+          ]}
         >
-          <View style={s.handHeader}>
-            <Text style={s.handLabel}>YOUR HAND</Text>
-            <Text style={s.betLabel}>{casinoMoney(hand.bet)}</Text>
+          <View style={[s.seatHeading, compact && s.shortSeatHeading]}>
+            <View style={[s.handHeader, compact && { gap: 2 }]}>
+              <Text style={s.handLabel}>YOUR HAND</Text>
+              <Text style={[s.betLabel, compact && { fontSize: 11 }]}>
+                {casinoMoney(hand.bet)}
+              </Text>
+            </View>
+            <Text style={s.total}>
+              {playerValue.total}
+              {playerValue.total > 21
+                ? " · bust"
+                : playerValue.soft
+                  ? " · soft"
+                  : ""}
+            </Text>
           </View>
-          <View style={[s.cards, { gap: 4 }]}>
+          <View style={[s.cards, s.seatCards, compact && { flex: 1 }]}>
             {hand.cards.map((card, index) => (
               <View
                 key={card.id}
                 style={
-                  index > 0 && hand.cards.length > 2
+                  index > 0 && hand.cards.length > 3
                     ? {
-                        marginLeft: Math.max(
-                          -31,
-                          76 / (hand.cards.length - 1) - 48,
+                        marginLeft: Math.min(
+                          0,
+                          Math.max(
+                            compact ? -31 : -43,
+                            (compact ? 132 : 204) / (hand.cards.length - 1) -
+                              (compact ? 48 : 64),
+                          ),
                         ),
                       }
                     : undefined
                 }
               >
-                <CasinoCard card={card} compact />
+                <CasinoCard card={card} compact={compact} small />
               </View>
             ))}
           </View>
-          <Text style={s.total}>
-            {playerValue.total}
-            {playerValue.total > 21
-              ? " · bust"
-              : playerValue.soft
-                ? " · soft"
-                : ""}
-          </Text>
         </View>
       </View>
-      <View style={s.compactOutcome} accessibilityLiveRegion="polite">
+      <View
+        style={[s.compactOutcome, compact && { paddingVertical: 1 }]}
+        accessibilityLiveRegion="polite"
+      >
         <Text style={[s.roundTitle, { color: resultColor, fontSize: 17 }]}>
           {casinoRoundLabel(table)}
         </Text>
@@ -232,7 +260,7 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
   const previousShoe = useRef<{ id: string; number: number } | null>(null);
   const { height, width, fontScale } = useWindowDimensions();
   const compact = height < 740 && fontScale <= 1.2;
-  const sideBySide =
+  const phoneTable =
     compact || (width < 600 && height < 940 && fontScale <= 1.2);
   const smallCards = height < 940 || width < 600;
   const player = useAudioPlayer(require("../../assets/card.wav"));
@@ -369,8 +397,8 @@ export default function CasinoScreen({ onExit }: { onExit: () => void }) {
           ]}
         >
           <View style={s.feltLine} pointerEvents="none" />
-          {sideBySide && round?.hands.length === 1 ? (
-            <CompactSingleRound table={table} />
+          {phoneTable && round?.hands.length === 1 ? (
+            <StackedSingleRound table={table} compact={compact} />
           ) : (
             <>
               <View style={s.dealerTitle}>
@@ -980,7 +1008,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, minHeight: 0, backgroundColor: colors.bg },
   compactCard: {
     width: 44,
-    height: 60,
+    height: 56,
     borderRadius: 7,
     paddingHorizontal: 6,
     paddingVertical: 4,
@@ -993,23 +1021,42 @@ const s = StyleSheet.create({
     borderColor: "#68907B",
     backgroundColor: "#1C4943",
   },
-  compactSides: {
-    flexDirection: "row",
+  stackedSeats: {
     gap: 8,
     width: "100%",
-    alignItems: "flex-start",
   },
-  compactSeat: {
-    flex: 1,
+  stackedSeat: {
+    width: "100%",
     minWidth: 0,
     borderWidth: 1,
     borderColor: "#446C59",
     borderRadius: 12,
-    padding: 6,
-    gap: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 4,
     alignItems: "center",
     backgroundColor: "#082C2670",
   },
+  shortSeat: {
+    flexDirection: "row",
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    gap: 4,
+  },
+  seatHeading: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 4,
+  },
+  shortSeatHeading: {
+    width: 86,
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 2,
+  },
+  seatCards: { gap: 4, minWidth: 0 },
   compactOutcome: {
     flexDirection: "row",
     justifyContent: "center",
